@@ -1,0 +1,45 @@
+{
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@react-pdf/renderer": "^4.9.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "bcryptjs": "^3.0.3",
+    "date-fns": "^4.4.0",
+    "exceljs": "^3.4.0",
+    "geolib": "^3.3.14",
+    "html5-qrcode": "^2.3.8",
+    "lucide-react": "^1.43.0",
+    "next": "^16.3.4",
+    "next-auth": "^4.24.15",
+    "next-pwa": "^2.0.2",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^26.4.1",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.18",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.26",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^4.3.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio"
+  },
+  "prisma": {
+    "seed": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
+  }
+}

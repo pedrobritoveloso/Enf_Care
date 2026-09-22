@@ -1,0 +1,154 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum TipoUtilizador {
+  ADMIN
+  ENFERMEIRO
+}
+
+enum EstadoTurno {
+  RASCUNHO
+  PUBLICADO
+  AGUARDAR_ENFERMEIRO
+  ATRIBUIDO
+  EM_CURSO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum EstadoCandidatura {
+  PENDENTE
+  ACEITE
+  REJEITADA
+}
+
+model Utilizador {
+  id         String         @id @default(uuid())
+  nome       String
+  email      String         @unique
+  telefone   String?
+  password   String
+  tipo       TipoUtilizador @default(ENFERMEIRO)
+  ativo      Boolean        @default(true)
+  criadoEm   DateTime       @default(now())
+  atualizadoEm DateTime    @updatedAt
+  enfermeiro Enfermeiro?
+  auditorias AuditoriaLog[]
+}
+
+model Enfermeiro {
+  id                 String   @id @default(uuid())
+  utilizadorId       String   @unique
+  cedulaProfissional String   @unique
+  especialidades     String[]
+  dadosProfissionais String?
+  precoHora          Float?   @default(10.0)
+
+  utilizador   Utilizador    @relation(fields: [utilizadorId], references: [id], onDelete: Cascade)
+  candidaturas Candidatura[]
+  atribuicoes  Atribuicao[]
+  assiduidades Assiduidade[]
+  relatorios   Relatorio[]
+}
+
+model Instituicao {
+  id          String   @id @default(uuid())
+  nome        String
+  nif         String   @unique
+  morada      String
+  latitude    Float?
+  longitude   Float?
+  qrCodeToken String   @unique @default(uuid())
+  ativo       Boolean  @default(true)
+
+  turnos     Turno[]
+  relatorios Relatorio[]
+}
+
+model Turno {
+  id            String      @id @default(uuid())
+  instituicaoId String
+  data          DateTime
+  horaInicio    String
+  horaFim       String
+  vagas         Int         @default(1)
+  valorHora     Float?
+  estado        EstadoTurno @default(RASCUNHO)
+  motivoConclusao String?
+
+  instituicao  Instituicao   @relation(fields: [instituicaoId], references: [id])
+  candidaturas Candidatura[]
+  atribuicoes  Atribuicao[]
+  assiduidades Assiduidade[]
+}
+
+model Candidatura {
+  id           String            @id @default(uuid())
+  turnoId      String
+  enfermeiroId String
+  estado       EstadoCandidatura @default(PENDENTE)
+  criadoEm     DateTime          @default(now())
+
+  turno      Turno      @relation(fields: [turnoId], references: [id])
+  enfermeiro Enfermeiro @relation(fields: [enfermeiroId], references: [id])
+
+  @@unique([turnoId, enfermeiroId])
+}
+
+model Atribuicao {
+  id           String   @id @default(uuid())
+  turnoId      String
+  enfermeiroId String
+  criadoEm     DateTime @default(now())
+
+  turno      Turno      @relation(fields: [turnoId], references: [id])
+  enfermeiro Enfermeiro @relation(fields: [enfermeiroId], references: [id])
+}
+
+model Assiduidade {
+  id                    String    @id @default(uuid())
+  turnoId               String
+  enfermeiroId          String
+  entradaReal           DateTime?
+  saidaReal             DateTime?
+  localizacaoEntradaLat Float?
+  localizacaoEntradaLon Float?
+  localizacaoSaidaLat   Float?
+  localizacaoSaidaLon   Float?
+  horasContabilizadas   Float?
+
+  turno      Turno      @relation(fields: [turnoId], references: [id])
+  enfermeiro Enfermeiro @relation(fields: [enfermeiroId], references: [id])
+}
+
+model Relatorio {
+  id            String   @id @default(uuid())
+  periodo       String
+  instituicaoId String?
+  enfermeiroId  String?
+  ficheiroUrl   String
+  criadoEm      DateTime @default(now())
+
+  instituicao Instituicao? @relation(fields: [instituicaoId], references: [id])
+  enfermeiro  Enfermeiro?  @relation(fields: [enfermeiroId], references: [id])
+}
+
+model AuditoriaLog {
+  id              String   @id @default(uuid())
+  utilizadorId    String
+  acao            String
+  entidade        String
+  entidadeId      String
+  dadosAnteriores String?
+  dadosNovos      String?
+  motivo          String?
+  dataHora        DateTime @default(now())
+
+  utilizador Utilizador @relation(fields: [utilizadorId], references: [id])
+}
