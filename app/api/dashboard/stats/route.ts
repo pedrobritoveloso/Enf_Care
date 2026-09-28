@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { atualizarTurnosExpirados } from "@/lib/turnosUtils"; // <-- 1. Importa a tua função de expiração
 
 export async function GET(req: Request) {
   try {
@@ -10,6 +11,11 @@ export async function GET(req: Request) {
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
+
+    // 2. EXECUTAR EXPIRAÇÃO PRIMEIRO:
+    // Garante que qualquer turno que já tenha passado da hora é atualizado no banco
+    // ANTES de fazeres os counts e findMany abaixo.
+    await atualizarTurnosExpirados();
 
     const utilizador = await prisma.utilizador.findUnique({
       where: { email: session.user.email },
@@ -76,7 +82,6 @@ export async function GET(req: Request) {
     // --- LÓGICA PARA ENFERMEIRO ---
     let enfermeiro = utilizador.enfermeiro;
 
-    // Fallback/Self-healing: se for ENFERMEIRO mas não tiver registo criado, cria um automaticamente
     if (!enfermeiro) {
       enfermeiro = await prisma.enfermeiro.create({
         data: {
@@ -89,7 +94,6 @@ export async function GET(req: Request) {
 
     const enfermeiroId = enfermeiro.id;
 
-    // 1. Procurar o turno ativo (EM_CURSO) ou o próximo (ATRIBUIDO)
     const proximoTurno = await prisma.turno.findFirst({
       where: {
         atribuicoes: {
@@ -100,7 +104,7 @@ export async function GET(req: Request) {
         },
       },
       orderBy: [
-        { estado: "desc" }, // Prioridade a turnos "EM_CURSO"
+        { estado: "desc" },
         { data: "asc" },
       ],
       include: {
@@ -115,7 +119,6 @@ export async function GET(req: Request) {
       },
     });
 
-    // 2. Total de turnos aceites/efetuados
     const totalTurnosAceites = await prisma.atribuicao.count({
       where: { enfermeiroId },
     });
