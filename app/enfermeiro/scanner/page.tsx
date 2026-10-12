@@ -11,9 +11,8 @@ export default function ScannerPage() {
 
   const handleScanSuccess = async (decodedText: string) => {
     setLoading(true);
-    setMensagem("A obter localização e processar QR Code...");
+    setMensagem("A obter geolocalização e processar ponto...");
 
-    // Tentar obter geolocalização do telemóvel (opcional)
     let lat: number | null = null;
     let lon: number | null = null;
 
@@ -25,7 +24,7 @@ export default function ScannerPage() {
         lat = position.coords.latitude;
         lon = position.coords.longitude;
       } catch (e) {
-        console.warn("Não foi possível obter a geolocalização:", e);
+        console.warn("Geolocalização indisponível:", e);
       }
     }
 
@@ -39,10 +38,12 @@ export default function ScannerPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setMensagem(data.message);
+        setMensagem(data.message || "Ponto registado com sucesso!");
         setTimeout(() => {
-          router.push("/enfermeiro/turnos");
-        }, 2500);
+          // Redireciona de volta para a dashboard do enfermeiro
+          router.push("/");
+          router.refresh();
+        }, 1500);
       } else {
         setMensagem(data.error || "Erro ao validar QR Code.");
         setLoading(false);
@@ -57,20 +58,20 @@ export default function ScannerPage() {
   return (
     <div className="space-y-6 max-w-lg mx-auto py-6 px-4">
       <div className="text-center space-y-1">
-        <h1 className="text-2xl font-extrabold text-slate-900">Registo por QR Code</h1>
-        <p className="text-xs text-slate-400">Aponte a câmara para o cartaz da instituição para fazer Check-in/Check-out</p>
+        <h1 className="text-2xl font-extrabold text-slate-900">Leitura de QR Code</h1>
+        <p className="text-xs text-slate-400">Aponte a câmara traseira para o cartaz da instituição</p>
       </div>
 
       {loading ? (
         <div className="bg-white p-10 rounded-3xl text-center space-y-3 shadow-sm border border-slate-100">
-          <p className="text-sm font-semibold text-blue-600 animate-pulse">{mensagem}</p>
+          <p className="text-sm font-semibold text-emerald-600 animate-pulse">{mensagem}</p>
         </div>
       ) : (
         <QrScanner onScanSuccess={handleScanSuccess} />
       )}
 
       {mensagem && !loading && (
-        <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl text-center text-xs text-blue-700 font-medium">
+        <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl text-center text-xs text-emerald-700 font-medium">
           {mensagem}
         </div>
       )}

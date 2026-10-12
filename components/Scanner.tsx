@@ -12,13 +12,16 @@ export default function QrScanner({ onScanSuccess }: QrScannerProps) {
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
-    // Evitar iniciar duas vezes no StrictMode
     if (!scannerRef.current) {
       const scanner = new Html5QrcodeScanner(
         "reader",
         {
           fps: 10,
           qrbox: { width: 250, height: 250 },
+          // Força a utilização preferencial da câmara traseira
+          videoConstraints: {
+            facingMode: { exact: "environment" } // Se falhar em alguns dispositivos específicos, podes remover o "exact" e deixar só "environment"
+          }
         },
         false
       );
@@ -27,13 +30,11 @@ export default function QrScanner({ onScanSuccess }: QrScannerProps) {
 
       scanner.render(
         (decodedText) => {
-          // Quando lê com sucesso, limpa o scanner e passa o texto (token do QR)
           scanner.clear().catch(console.error);
           onScanSuccess(decodedText);
         },
         (error) => {
-          // Erros de leitura contínuos da câmara (normal enquanto procura o código)
-          // Ignoramos para não poluir a consola, ou guardamos se necessário
+          // Erros contínuos de varrimento de câmara (ignorados)
         }
       );
     }
