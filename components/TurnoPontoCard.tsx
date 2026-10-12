@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, MapPin, Play, Square, CheckCircle2, Navigation, AlertTriangle, X, Info } from "lucide-react";
+import { Clock, MapPin, Play, Square, CheckCircle2, Navigation, AlertTriangle, X, Info, QrCode } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 interface Turno {
   id: string;
@@ -19,7 +20,7 @@ interface Turno {
 
 export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?: () => void }) {
   const [modalAberto, setModalAberto] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const assiduidade = turno.assiduidades?.[0];
 
@@ -37,46 +38,10 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
 
   const turnoExpirado = checarSeTurnoExpirou();
 
-  const handlePonto = async (acao: "CHECK_IN" | "CHECK_OUT") => {
-    setLoading(true);
-
-    let lat: number | null = null;
-    let lon: number | null = null;
-
-    if ("geolocation" in navigator) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 4000 })
-        );
-        lat = pos.coords.latitude;
-        lon = pos.coords.longitude;
-      } catch (e) {
-        console.warn("Geolocalização indisponível.");
-      }
-    }
-
-    try {
-      const res = await fetch(`/api/turnos/${turno.id}/ponto`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao, lat, lon }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        alert(data.message);
-        setModalAberto(false);
-        if (onUpdate) onUpdate();
-      } else {
-        alert(data.error || "Erro ao efetuar registo de ponto.");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Erro de comunicação com o servidor.");
-    } finally {
-      setLoading(false);
-    }
+  // Redireciona para o leitor de QR Code para validar o ponto fisicamente na instituição
+  const irParaScanner = () => {
+    setModalAberto(false);
+    router.push("/enfermeiro/scanner");
   };
 
   return (
@@ -117,7 +82,7 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
           <span className="flex items-center gap-1 text-emerald-800">
             <Clock className="w-3.5 h-3.5" /> {turno.horaInicio} - {turno.horaFim}
           </span>
-          <span className="text-xs text-emerald-700 font-bold">Clique para detalhes / ponto →</span>
+          <span className="text-xs text-emerald-700 font-bold">Ler QR Code para Ponto →</span>
         </div>
       </div>
 
@@ -151,21 +116,11 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
               {turno.estado === "ATRIBUIDO" && !turnoExpirado && (
                 <div className="space-y-2">
                   <button
-                    disabled={loading}
-                    onClick={() => handlePonto("CHECK_IN")}
+                    onClick={irParaScanner}
                     className="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99]"
                   >
-                    <Play className="w-4 h-4 fill-current" />
-                    {loading ? "A registar entrada..." : "Fazer Check-in (Iniciar Turno)"}
-                  </button>
-
-                  <button
-                    disabled={loading}
-                    onClick={() => handlePonto("CHECK_OUT")}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all"
-                  >
-                    <Square className="w-3.5 h-3.5" />
-                    Concluir Diretamente sem Check-in
+                    <QrCode className="w-4 h-4" />
+                    Ler QR Code da Instituição (Check-in)
                   </button>
                 </div>
               )}
@@ -181,12 +136,11 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
                     </div>
                   )}
                   <button
-                    disabled={loading}
-                    onClick={() => handlePonto("CHECK_OUT")}
+                    onClick={irParaScanner}
                     className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99]"
                   >
-                    <Square className="w-4 h-4 fill-current" />
-                    {loading ? "A registar saída..." : "Fazer Check-out (Terminar Turno)"}
+                    <QrCode className="w-4 h-4" />
+                    Ler QR Code da Instituição (Check-out)
                   </button>
                 </div>
               )}
