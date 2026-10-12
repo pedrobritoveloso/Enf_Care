@@ -41,7 +41,7 @@ export default function ScannerPage() {
         setMensagem(data.message || "Ponto registado com sucesso!");
         setTimeout(() => {
           // Redireciona de volta para a dashboard do enfermeiro
-          router.push("/");
+          router.push("/dashboard");
           router.refresh();
         }, 1500);
       } else {
