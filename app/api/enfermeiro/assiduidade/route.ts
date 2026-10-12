@@ -11,19 +11,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const { qrCode } = await req.json();
+    const { qrCode, lat, lon } = await req.json();
 
     if (!qrCode) {
       return NextResponse.json({ error: "QR Code não fornecido" }, { status: 400 });
     }
 
-    // 1. Encontrar a instituição através do QR Code lido
+    // 1. Encontrar a instituição pelo QR Code
     const instituicao = await prisma.instituicao.findUnique({
       where: { qrCode },
     });
 
     if (!instituicao) {
-      return NextResponse.json({ error: "QR Code de instituição inválido." }, { status: 404 });
+      return NextResponse.json({ error: "QR Code de instituição inválido ou não reconhecido." }, { status: 404 });
     }
 
     // 2. Obter o enfermeiro logado
@@ -37,8 +37,9 @@ export async function POST(req: Request) {
     }
 
     const enfermeiroId = utilizador.enfermeiro.id;
+    const agora = new Date();
 
-    // 3. Procurar um turno desta instituição atribuído a este enfermeiro que esteja pronto para Check-in ou em curso para Check-out
+    // 3. Encontrar um turno desta instituição atribuído a este enfermeiro (ATRIBUIDO ou EM_CURSO)
     const atribuicao = await prisma.atribuicao.findFirst({
       where: {
         enfermeiroId,
@@ -61,22 +62,16 @@ export async function POST(req: Request) {
     const turnoId = atribuicao.turno.id;
     const estadoTurno = atribuicao.turno.estado;
 
-    // 4. Decidir automaticamente se faz CHECK_IN ou CHECK_OUT com base no estado do turno
-    let acao = "CHECK_IN";
-    if (estadoTurno === "EM_CURSO") {
-      acao = "CHECK_OUT";
-    }
-
-    // Opcional: podes invocar diretamente a lógica ou reutilizar a transação da outra rota
-    const agora = new Date();
-
-    if (acao === "CHECK_IN") {
+    // 4. Se o turno está ATRIBUIDO -> Faz CHECK_IN
+    if (estadoTurno === "ATRIBUIDO") {
       await prisma.$transaction([
         prisma.assiduidade.create({
           data: {
             turnoId,
             enfermeiroId,
             entradaReal: agora,
+            localizacaoEntradaLat: lat || null,
+            localizacaoEntradaLon: lon || null,
           },
         }),
         prisma.turno.update({
@@ -89,8 +84,10 @@ export async function POST(req: Request) {
         success: true,
         message: `Check-in efetuado com sucesso em ${instituicao.nome}!`,
       });
-    } else {
-      // CHECK_OUT
+    }
+
+    // 5. Se o turno está EM_CURSO -> Faz CHECK_OUT
+    if (estadoTurno === "EM_CURSO") {
       const assiduidade = await prisma.assiduidade.findFirst({
         where: { turnoId, enfermeiroId, saidaReal: null },
       });
@@ -103,27 +100,45 @@ export async function POST(req: Request) {
           ? [
               prisma.assiduidade.update({
                 where: { id: assiduidade.id },
-                data: { saidaReal: agora, horasContabilizadas },
+                data: {
+                  saidaReal: agora,
+                  localizacaoSaidaLat: lat || null,
+                  localizacaoSaidaLon: lon || null,
+                  horasContabilizadas,
+                },
               }),
             ]
           : [
               prisma.assiduidade.create({
-                data: { turnoId, enfermeiroId, saidaReal: agora, horasContabilizadas: 0 },
+                data: {
+                  turnoId,
+                  enfermeiroId,
+                  saidaReal: agora,
+                  localizacaoSaidaLat: lat || null,
+                  localizacaoSaidaLon: lon || null,
+                  horasContabilizadas: 0,
+                },
               }),
             ]),
         prisma.turno.update({
           where: { id: turnoId },
-          data: { estado: "CONCLUIDO", motivoConclusao: "concluído por QR code" },
+          data: {
+            estado: "CONCLUIDO",
+            motivoConclusao: "concluído por leitura de QR Code",
+          },
         }),
       ]);
 
       return NextResponse.json({
         success: true,
         message: `Check-out efetuado com sucesso em ${instituicao.nome}!`,
+        horasContabilizadas,
       });
     }
+
+    return NextResponse.json({ error: "Estado do turno inválido para picagem." }, { status: 400 });
   } catch (error: any) {
-    console.error("Erro no processamento do scanner:", error);
-    return NextResponse.json({ error: error.message || "Erro interno no servidor" }, { status: 500 });
+    console.error("Erro no processamento do QR Code:", error);
+    return NextResponse.json({ error: error.message || "Erro no servidor." }, { status: 500 });
   }
 }
