@@ -3,6 +3,7 @@
     "@prisma/client": "^5.22.0",
     "@react-pdf/renderer": "^4.9.0",
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/qrcode.react": "^1.0.5",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
     "exceljs": "^3.4.0",
@@ -13,6 +14,7 @@
     "next-auth": "^4.24.15",
     "next-pwa": "^2.0.2",
     "qrcode": "^1.5.4",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.5.4"

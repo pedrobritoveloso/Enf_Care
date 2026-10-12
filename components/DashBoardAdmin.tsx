@@ -37,7 +37,11 @@ export default function DashboardAdmin() {
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch("/api/dashboard/stats");
-      if (!res.ok) throw new Error("Erro ao carregar dados");
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      if (!res.ok) throw new Error("Falha ao obter dados.");
       const data = await res.json();
       setStats(data);
     } catch (err) {

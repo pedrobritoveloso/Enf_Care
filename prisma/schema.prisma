@@ -59,17 +59,19 @@ model Enfermeiro {
 }
 
 model Instituicao {
-  id          String   @id @default(uuid())
-  nome        String
-  nif         String   @unique
-  morada      String
-  latitude    Float?
-  longitude   Float?
-  qrCodeToken String   @unique @default(uuid())
-  ativo       Boolean  @default(true)
-
-  turnos     Turno[]
-  relatorios Relatorio[]
+  id        String   @id @default(cuid())
+  nome      String
+  nif       String   @unique
+  morada    String
+  telefone  String?
+  email     String?
+  latitude  Float?
+  longitude Float?
+  qrCode    String?  @unique // Identificador único para o QR Code da instituição
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  turnos    Turno[]
+  relatorios  Relatorio[]  
 }
 
 model Turno {

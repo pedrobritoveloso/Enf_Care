@@ -53,6 +53,10 @@ export default function DashboardEnfermeiro() {
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch("/api/dashboard/stats");
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
       if (!res.ok) throw new Error("Erro ao carregar métricas do enfermeiro");
       const data = await res.json();
       setStats(data);

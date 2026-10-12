@@ -4,9 +4,6 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const instituicoes = await prisma.instituicao.findMany({
-      where: {
-        ativo: true, // Enfermeiros só veem instituições ativas
-      },
       orderBy: {
         nome: "asc",
       },

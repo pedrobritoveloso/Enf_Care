@@ -10,7 +10,6 @@ interface Instituicao {
   morada: string;
   latitude?: number | null;
   longitude?: number | null;
-  ativo: boolean;
 }
 
 export default function EnfermeiroInstituicoesList() {

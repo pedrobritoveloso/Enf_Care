@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { instituicaoSchema } from "@/lib/validations/instituiçao";
 import { ZodError } from "zod";
 
-// GET: Listar instituições (Acessível a ADMIN e ENFERMEIRO)
+// GET: Listar instituições
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -14,20 +14,8 @@ export async function GET() {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    // Admins veem todas as instituições; Enfermeiros apenas as ativas
-    const whereClause = session.user.role === "ADMIN" ? {} : { ativo: true };
-
     const instituicoes = await prisma.instituicao.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        nome: true,
-        nif: true,
-        morada: true,
-        latitude: true,
-        longitude: true,
-        qrCodeToken: true,
-        ativo: true,
+      include: {
         _count: {
           select: { turnos: true },
         },
@@ -42,19 +30,18 @@ export async function GET() {
   }
 }
 
-// POST: Criar nova instituição (Apenas ADMIN)
+// POST: Criar nova instituição (com geração automática de QR Code)
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || session.user.tipo !== "ADMIN") {
       return NextResponse.json({ error: "Acesso reservado a Administradores" }, { status: 403 });
     }
 
     const body = await req.json();
     const validatedData = instituicaoSchema.parse(body);
 
-    // Verificar se o NIF já existe
     const existingNif = await prisma.instituicao.findUnique({
       where: { nif: validatedData.nif },
     });
@@ -66,6 +53,9 @@ export async function POST(req: Request) {
       );
     }
 
+    // Gerar o token único para o QR Code de assiduidade
+    const qrCode = `ENFCARE-INST-${validatedData.nif}-${Math.random().toString(36).substring(7).toUpperCase()}`;
+
     const novaInstituicao = await prisma.instituicao.create({
       data: {
         nome: validatedData.nome,
@@ -73,6 +63,7 @@ export async function POST(req: Request) {
         morada: validatedData.morada,
         latitude: validatedData.latitude ?? null,
         longitude: validatedData.longitude ?? null,
+        qrCode,
       },
     });
 
