@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calendar, Clock, MapPin, CheckCircle2, Play, Square, X, Navigation, Undo2 } from "lucide-react";
+import { Calendar, Clock, MapPin, CheckCircle2, QrCode, X, Navigation } from "lucide-react";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { useRouter } from "next/navigation";
 
 interface ProximoTurno {
   id: string;
@@ -21,10 +22,6 @@ interface EnfermeiroStats {
   proximoTurno?: ProximoTurno | null;
 }
 
-/**
- * Valida se o check-in é permitido:
- * Ativa apenas a partir de 10 minutos antes da horaInicio do turno até ao final.
- */
 function podeFazerCheckIn(dataTurnoStr: string, horaInicioStr: string, horaFimStr: string): boolean {
   if (!dataTurnoStr || !horaInicioStr || !horaFimStr) return false;
   const agora = new Date();
@@ -33,14 +30,11 @@ function podeFazerCheckIn(dataTurnoStr: string, horaInicioStr: string, horaFimSt
   const inicioTurno = new Date(`${dataApenas}T${horaInicioStr}:00`);
   const fimTurno = new Date(`${dataApenas}T${horaFimStr}:00`);
 
-  // Caso o turno termine no dia seguinte (ex: 22:00 às 06:00)
   if (fimTurno < inicioTurno) {
     fimTurno.setDate(fimTurno.getDate() + 1);
   }
 
-  // Limite inferior: 10 minutos antes do início
   const limiteInicio = new Date(inicioTurno.getTime() - 10 * 60 * 1000);
-
   return agora >= limiteInicio && agora <= fimTurno;
 }
 
@@ -48,7 +42,7 @@ export default function DashboardEnfermeiro() {
   const [stats, setStats] = useState<EnfermeiroStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPontoModal, setShowPontoModal] = useState(false);
-  const [processando, setProcessando] = useState(false);
+  const router = useRouter();
 
   const fetchStats = useCallback(async () => {
     try {
@@ -67,54 +61,16 @@ export default function DashboardEnfermeiro() {
     }
   }, []);
 
-  // Fetch inicial
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
 
-  // Re-fetch periódico a cada 15 segundos
   useAutoRefresh(fetchStats, 15000);
 
-  const handlePonto = async (acao: "CHECK_IN" | "CHECK_OUT" | "UNDO_CHECK_IN") => {
-    if (!stats?.proximoTurno) return;
-    setProcessando(true);
-
-    let lat: number | null = null;
-    let lon: number | null = null;
-
-    if ("geolocation" in navigator && acao !== "UNDO_CHECK_IN") {
-      try {
-        const pos = await new Promise<GeolocationPosition>((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 4000 })
-        );
-        lat = pos.coords.latitude;
-        lon = pos.coords.longitude;
-      } catch (e) {
-        console.warn("Geolocalização indisponível ou permissão recusada.", e);
-      }
-    }
-
-    try {
-      const res = await fetch(`/api/turnos/${stats.proximoTurno.id}/ponto`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao, lat, lon }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        alert(data.message || "Operação realizada com sucesso!");
-        setShowPontoModal(false);
-        fetchStats();
-      } else {
-        alert(data.error || "Erro ao registar operação.");
-      }
-    } catch (err) {
-      console.error("Erro ao comunicar com o servidor:", err);
-      alert("Erro de ligação ao servidor.");
-    } finally {
-      setProcessando(false);
-    }
+  // Redireciona para o scanner para validar o QR Code na instituição
+  const irParaScanner = () => {
+    setShowPontoModal(false);
+    router.push("/enfermeiro/scanner");
   };
 
   const formatDate = (dateStr: string) => {
@@ -173,7 +129,7 @@ export default function DashboardEnfermeiro() {
                   <span>{proximoTurno.horaInicio} - {proximoTurno.horaFim}</span>
                 </div>
               </div>
-              <span className="text-emerald-700 font-bold hover:underline">Check-in / Out →</span>
+              <span className="text-emerald-700 font-bold hover:underline">Ler QR Code →</span>
             </div>
           </div>
         ) : (
@@ -200,8 +156,8 @@ export default function DashboardEnfermeiro() {
           <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-5 shadow-xl">
             <div className="flex justify-between items-center border-b pb-3 border-slate-100">
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Registo de Ponto</h3>
-                <p className="text-xs text-slate-400">Marque a entrada, saída ou anule o check-in</p>
+                <h3 className="font-bold text-slate-900 text-base">Registo por QR Code</h3>
+                <p className="text-xs text-slate-400">Escaneie o código da instituição para marcar o ponto</p>
               </div>
               <button onClick={() => setShowPontoModal(false)} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
@@ -218,7 +174,6 @@ export default function DashboardEnfermeiro() {
             </div>
 
             <div className="space-y-3 pt-1">
-              {/* Mensagem se o Check-in ainda não estiver disponível */}
               {proximoTurno.estado !== "EM_CURSO" &&
                 proximoTurno.estado !== "CONCLUIDO" &&
                 !podeFazerCheckIn(proximoTurno.data, proximoTurno.horaInicio, proximoTurno.horaFim) && (
@@ -227,46 +182,31 @@ export default function DashboardEnfermeiro() {
                   </div>
                 )}
 
-              {/* Botão de Check-in */}
+              {/* Botão de Check-in via QR Code */}
               {proximoTurno.estado !== "EM_CURSO" && proximoTurno.estado !== "CONCLUIDO" && (
                 <button
-                  disabled={
-                    !podeFazerCheckIn(proximoTurno.data, proximoTurno.horaInicio, proximoTurno.horaFim) ||
-                    processando
-                  }
-                  onClick={() => handlePonto("CHECK_IN")}
+                  disabled={!podeFazerCheckIn(proximoTurno.data, proximoTurno.horaInicio, proximoTurno.horaFim)}
+                  onClick={irParaScanner}
                   className={`w-full font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all ${
-                    podeFazerCheckIn(proximoTurno.data, proximoTurno.horaInicio, proximoTurno.horaFim) && !processando
+                    podeFazerCheckIn(proximoTurno.data, proximoTurno.horaInicio, proximoTurno.horaFim)
                       ? "bg-emerald-800 hover:bg-emerald-900 text-white shadow-sm cursor-pointer"
                       : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
                   }`}
                 >
-                  <Play className="w-4 h-4 fill-current" />
-                  {processando ? "A registar entrada..." : "Fazer Check-in (Iniciar Turno)"}
+                  <QrCode className="w-4 h-4" />
+                  Ler QR Code para Check-in
                 </button>
               )}
 
-              {/* Opções quando o Turno está em curso */}
+              {/* Botão de Check-out via QR Code */}
               {proximoTurno.estado === "EM_CURSO" && (
-                <>
-                  <button
-                    disabled={processando}
-                    onClick={() => handlePonto("CHECK_OUT")}
-                    className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Square className="w-4 h-4 fill-current" />
-                    {processando ? "A registar saída..." : "Fazer Check-out (Terminar Turno)"}
-                  </button>
-
-                  <button
-                    disabled={processando}
-                    onClick={() => handlePonto("UNDO_CHECK_IN")}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 border border-slate-200 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Undo2 className="w-4 h-4 text-slate-500" />
-                    {processando ? "A anular..." : "Anular Check-in"}
-                  </button>
-                </>
+                <button
+                  onClick={irParaScanner}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4" />
+                  Ler QR Code para Check-out
+                </button>
               )}
             </div>
           </div>
