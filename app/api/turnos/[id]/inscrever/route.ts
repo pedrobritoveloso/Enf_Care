@@ -43,7 +43,7 @@ export async function POST(
       });
     }
 
-    // 3. Executa a transação para submeter a candidatura
+    // 3. Executa a transação para submeter ou reativar a candidatura
     const resultado = await prisma.$transaction(async (tx) => {
       const turno = await tx.turno.findUnique({
         where: { id: turnoId },
@@ -53,7 +53,7 @@ export async function POST(
         throw new Error("Este turno já não se encontra disponível para candidaturas.");
       }
 
-      // Verificar se o enfermeiro já submeteu candidatura a este turno
+      // Verificar se já existe candidatura anterior
       const candidaturaExistente = await tx.candidatura.findUnique({
         where: {
           turnoId_enfermeiroId: {
@@ -63,23 +63,33 @@ export async function POST(
         },
       });
 
-      if (candidaturaExistente) {
-        throw new Error("Já submeteu uma candidatura para este turno.");
-      }
+      let candidatura;
 
-      // Criar a candidatura com estado PENDENTE (em vez de atribuição direta)
-      const candidatura = await tx.candidatura.create({
-        data: {
-          turnoId: turno.id,
-          enfermeiroId: enfermeiro.id,
-          estado: "PENDENTE", //[cite: 10]
-        },
-      });
+      if (candidaturaExistente) {
+        if (candidaturaExistente.estado === "PENDENTE" || candidaturaExistente.estado === "ACEITE") {
+          throw new Error("Já submeteu uma candidatura ativa para este turno.");
+        }
+
+        // Se a candidatura anterior foi REJEITADA, atualiza para PENDENTE permitindo uma nova tentativa
+        candidatura = await tx.candidatura.update({
+          where: { id: candidaturaExistente.id },
+          data: { estado: "PENDENTE" },
+        });
+      } else {
+        // Criar a candidatura com estado PENDENTE se não existir registo prévio
+        candidatura = await tx.candidatura.create({
+          data: {
+            turnoId: turno.id,
+            enfermeiroId: enfermeiro.id,
+            estado: "PENDENTE",
+          },
+        });
+      }
 
       // Atualizar o estado do turno para indicar que tem candidaturas a aguardar validação
       await tx.turno.update({
         where: { id: turno.id },
-        data: { estado: "AGUARDAR_ENFERMEIRO" }, //[cite: 10]
+        data: { estado: "AGUARDAR_ENFERMEIRO" },
       });
 
       return candidatura;
