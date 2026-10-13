@@ -3,31 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
-// GET: Buscar todas as instituições para o painel de admin
-export async function GET() {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-    }
-
-    const instituicoes = await prisma.instituicao.findMany({
-      orderBy: {
-        nome: "asc",
-      },
-    });
-
-    return NextResponse.json(instituicoes);
-  } catch (error) {
-    console.error("Erro ao procurar instituições (Admin):", error);
-    return NextResponse.json(
-      { error: "Erro ao procurar instituições" },
-      { status: 500 }
-    );
-  }
-}
-
-// POST: Criar nova instituição no painel de admin
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -36,7 +11,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { nome, nif, morada, latitude, longitude } = body;
+    const { nome, nif, morada, telefone, email, latitude, longitude } = body;
 
     if (!nome || !nif || !morada) {
       return NextResponse.json(
@@ -52,10 +27,11 @@ export async function POST(req: Request) {
         nome,
         nif,
         morada,
+        telefone: telefone || null,
+        email: email || null,
         latitude: latitude ? parseFloat(latitude) : null,
         longitude: longitude ? parseFloat(longitude) : null,
         qrCode,
-        // Removido o campo 'ativo' para evitar o erro do Prisma
       },
     });
 

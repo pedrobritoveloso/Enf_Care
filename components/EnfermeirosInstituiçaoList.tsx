@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Search, MapPin, FileText } from "lucide-react";
+import { Building2, Search, MapPin, FileText, Phone, Mail } from "lucide-react";
 
 interface Instituicao {
   id: string;
   nome: string;
   nif: string;
   morada: string;
+  telefone?: string | null;
+  email?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 }
@@ -46,7 +48,7 @@ export default function EnfermeiroInstituicoesList() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-2xl mx-auto">
       {/* Cabeçalho */}
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
@@ -86,7 +88,7 @@ export default function EnfermeiroInstituicoesList() {
           {filtradas.map((inst) => (
             <div
               key={inst.id}
-              className="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm space-y-2.5 relative"
+              className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-3 relative"
             >
               <div>
                 <h3 className="font-bold text-slate-900 text-base leading-snug">
@@ -100,9 +102,27 @@ export default function EnfermeiroInstituicoesList() {
                 )}
               </div>
 
-              <div className="flex items-start gap-2 text-xs text-slate-500 pt-1 border-t border-slate-50">
-                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                <span className="leading-snug">{inst.morada}</span>
+              <div className="space-y-1.5 pt-2 border-t border-slate-50 text-xs text-slate-500">
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <span className="leading-snug">{inst.morada}</span>
+                </div>
+
+                {/* Exibição condicional de Telefone e Email */}
+                {(inst.telefone || inst.email) && (
+                  <div className="flex flex-wrap gap-4 pt-1">
+                    {inst.telefone && (
+                      <span className="flex items-center gap-1.5">
+                        <Phone className="w-3.5 h-3.5 text-slate-400" /> {inst.telefone}
+                      </span>
+                    )}
+                    {inst.email && (
+                      <span className="flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-slate-400" /> {inst.email}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}
