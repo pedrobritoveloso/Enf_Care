@@ -27,7 +27,7 @@ export async function PATCH(
     const { candidaturaId, acao } = body; // acao: "APROVAR" ou "REJEITAR"
 
     if (!candidaturaId || !acao) {
-      return NextResponse.json({ error: "Parâmetros em falta (candidaturaId ou acao)" }, { status: 400 });
+      return NextResponse.json({ error: "Parâmetros em falta" }, { status: 400 });
     }
 
     const resultado = await prisma.$transaction(async (tx) => {
@@ -47,7 +47,7 @@ export async function PATCH(
           data: { estado: "ACEITE" },
         });
 
-        // 2. Rejeitar as restantes candidaturas pendentes para este turno
+        // 2. Rejeitar todas as outras candidaturas pendentes para este turno
         await tx.candidatura.updateMany({
           where: {
             turnoId,
@@ -57,7 +57,7 @@ export async function PATCH(
           data: { estado: "REJEITADA" },
         });
 
-        // 3. Criar a atribuição oficial do turno ao enfermeiro
+        // 3. Criar a atribuição oficial
         await tx.atribuicao.create({
           data: {
             turnoId,
@@ -71,14 +71,14 @@ export async function PATCH(
           data: { estado: "ATRIBUIDO" },
         });
 
-        return { success: true, message: "Candidatura aprovada e turno atribuído com sucesso." };
+        return { success: true, message: "Candidatura aprovada com sucesso." };
       } else if (acao === "REJEITAR") {
         await tx.candidatura.update({
           where: { id: candidaturaId },
           data: { estado: "REJEITADA" },
         });
 
-        // Se não restarem mais candidaturas aceites ou pendentes, o turno pode voltar a PUBLICADO
+        // Verificar se ainda existem candidaturas pendentes
         const candidaturasPendentesRestantes = await tx.candidatura.count({
           where: { turnoId, estado: "PENDENTE" },
         });
@@ -99,6 +99,6 @@ export async function PATCH(
     return NextResponse.json(resultado);
   } catch (error: any) {
     console.error("Erro ao gerir candidatura:", error);
-    return NextResponse.json({ error: error.message || "Erro interno ao processar candidatura." }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Erro interno." }, { status: 500 });
   }
 }

@@ -13,13 +13,13 @@ import {
   CheckCircle2, 
   User,
   X,
-  Play,
-  Square
+  Send,
+  UserX
 } from "lucide-react";
 
 interface Turno {
   id: string;
-  data: string; // ISO string ou YYYY-MM-DD
+  data: string;
   horaInicio: string;
   horaFim: string;
   valorHora?: number;
@@ -30,40 +30,25 @@ interface Turno {
   };
   atribuicoes?: Array<{
     enfermeiro?: {
-      utilizador?: {
-        nome?: string;
-        email?: string;
-      };
+      id?: string;
+      utilizador?: { nome?: string; email?: string };
     };
   }>;
-}
-
-function podeFazerCheckIn(dataTurnoStr: string, horaInicioStr: string, horaFimStr: string): boolean {
-  if (!dataTurnoStr || !horaInicioStr || !horaFimStr) return false;
-  const agora = new Date();
-
-  const dataApenas = dataTurnoStr.split("T")[0];
-  const inicioTurno = new Date(`${dataApenas}T${horaInicioStr}:00`);
-  const fimTurno = new Date(`${dataApenas}T${horaFimStr}:00`);
-
-  if (fimTurno < inicioTurno) {
-    fimTurno.setDate(fimTurno.getDate() + 1);
-  }
-
-  const limiteInicio = new Date(inicioTurno.getTime() - 10 * 60 * 1000);
-  return agora >= limiteInicio && agora <= fimTurno;
+  candidaturas?: Array<{
+    id: string;
+    estado: string;
+  }>;
 }
 
 export default function TurnosPage() {
   const [viewMode, setViewMode] = useState<"calendario" | "lista">("calendario");
   const [turnos, setTurnos] = useState<Turno[]>([]);
   
-  // Estado para controlar a data atual do calendário (Mês e Ano)
   const [currentDate, setCurrentDate] = useState(new Date());
   const [diaSelecionado, setDiaSelecionado] = useState<number | null>(new Date().getDate());
   
   const [turnoDetalhe, setTurnoDetalhe] = useState<Turno | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [submetendo, setSubmetendo] = useState(false);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState("");
@@ -96,6 +81,58 @@ export default function TurnosPage() {
 
   useAutoRefresh(fetchTurnos, 15000);
 
+  // Função para o enfermeiro submeter candidatura ao turno
+  const handleCandidatar = async (turnoId: string) => {
+    setSubmetendo(true);
+    try {
+      const res = await fetch(`/api/turnos/${turnoId}/inscrever`, {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        alert(data.message || "Candidatura submetida com sucesso!");
+        setTurnoDetalhe(null);
+        fetchTurnos();
+      } else {
+        alert(data.error || "Erro ao submeter candidatura.");
+      }
+    } catch (err) {
+      console.error("Erro ao candidatar:", err);
+      alert("Erro de comunicação com o servidor.");
+    } finally {
+      setSubmetendo(false);
+    }
+  };
+
+  // Função para remover candidatura pendente ou desistir de turno atribuído
+  const handleRemoverOuDesistir = async (turnoId: string) => {
+    if (!confirm("Tem a certeza de que pretende retirar a sua candidatura/desistir deste turno?")) {
+      return;
+    }
+
+    setSubmetendo(true);
+    try {
+      const res = await fetch(`/api/turnos/${turnoId}/desassociar`, {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        alert(data.message || "Ação efetuada com sucesso.");
+        setTurnoDetalhe(null);
+        fetchTurnos();
+      } else {
+        alert(data.error || "Erro ao processar ação.");
+      }
+    } catch (err) {
+      console.error("Erro ao processar:", err);
+      alert("Erro de comunicação com o servidor.");
+    } finally {
+      setSubmetendo(false);
+    }
+  };
+
   const turnosFiltrados = useMemo(() => {
     if (!Array.isArray(turnos)) return [];
 
@@ -123,23 +160,15 @@ export default function TurnosPage() {
     });
   }, [turnos, searchTerm, estadoFilter]);
 
-  // Obter número de dias do mês atual selecionado
   const anoAtual = currentDate.getFullYear();
-  const mesAtual = currentDate.getMonth(); // 0 a 11
+  const mesAtual = currentDate.getMonth();
   const totalDiasNoMes = new Date(anoAtual, mesAtual + 1, 0).getDate();
 
-  // Nome do mês formatado (ex: "Outubro de 2026")
   const nomeMesFormatado = currentDate.toLocaleDateString("pt-PT", { month: "long", year: "numeric" });
   const nomeMesCapitalizado = nomeMesFormatado.charAt(0).toUpperCase() + nomeMesFormatado.slice(1);
 
-  const handleMesAnterior = () => {
-    setCurrentDate(new Date(anoAtual, mesAtual - 1, 1));
-  };
-
-  const handleMesSeguinte = () => {
-    setCurrentDate(new Date(anoAtual, mesAtual + 1, 1));
-  };
-
+  const handleMesAnterior = () => setCurrentDate(new Date(anoAtual, mesAtual - 1, 1));
+  const handleMesSeguinte = () => setCurrentDate(new Date(anoAtual, mesAtual + 1, 1));
   const handleIrParaHoje = () => {
     const hoje = new Date();
     setCurrentDate(hoje);
@@ -175,7 +204,6 @@ export default function TurnosPage() {
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-5 text-slate-800 pb-20">
-      {/* Título */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Turnos Disponíveis</h1>
         <p className="text-xs text-slate-400">{turnosFiltrados.length} turnos encontrados</p>
@@ -186,9 +214,7 @@ export default function TurnosPage() {
         <button
           onClick={() => setViewMode("calendario")}
           className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all ${
-            viewMode === "calendario"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-900"
+            viewMode === "calendario" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
           }`}
         >
           <CalendarIcon className="w-4 h-4" /> Calendário
@@ -196,9 +222,7 @@ export default function TurnosPage() {
         <button
           onClick={() => setViewMode("lista")}
           className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all ${
-            viewMode === "lista"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-900"
+            viewMode === "lista" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
           }`}
         >
           <List className="w-4 h-4" /> Lista
@@ -218,18 +242,16 @@ export default function TurnosPage() {
           />
         </div>
 
-        <div className="flex gap-2">
-          <select
-            value={estadoFilter}
-            onChange={(e) => setEstadoFilter(e.target.value)}
-            className="flex-1 bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-600 font-medium"
-          >
-            <option value="TODOS">Todos os estados</option>
-            <option value="DISPONIVEIS">Disponíveis (Amarelo)</option>
-            <option value="ATRIBUIDOS">Atribuídos (Verde)</option>
-            <option value="CONCLUIDOS">Concluídos (Azul)</option>
-          </select>
-        </div>
+        <select
+          value={estadoFilter}
+          onChange={(e) => setEstadoFilter(e.target.value)}
+          className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-xs text-slate-600 font-medium"
+        >
+          <option value="TODOS">Todos os estados</option>
+          <option value="DISPONIVEIS">Disponíveis (Amarelo)</option>
+          <option value="ATRIBUIDOS">Atribuídos (Verde)</option>
+          <option value="CONCLUIDOS">Concluídos (Azul)</option>
+        </select>
       </div>
 
       {/* VISTA: CALENDÁRIO */}
@@ -253,15 +275,11 @@ export default function TurnosPage() {
             </div>
           </div>
 
-          {/* Grelha de Dias */}
           <div className="grid grid-cols-7 text-center gap-y-2 text-xs">
             {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
-              <span key={d} className="text-slate-400 font-medium pb-1">
-                {d}
-              </span>
+              <span key={d} className="text-slate-400 font-medium pb-1">{d}</span>
             ))}
 
-            {/* Renderização dinâmica dos espaços vazios iniciais e dias do mês */}
             {(() => {
               const primeiroDiaDoMes = new Date(anoAtual, mesAtual, 1).getDay();
               const diasVaziosIniciais = Array.from({ length: primeiroDiaDoMes }, (_, i) => i);
@@ -288,10 +306,7 @@ export default function TurnosPage() {
                         <span className={`text-xs ${isSelected ? "text-emerald-900 font-bold" : "text-slate-700"}`}>
                           {dia}
                         </span>
-                        
-                        {corBadgeClass && (
-                          <span className={`w-2 h-2 rounded-full mt-0.5 ${corBadgeClass}`} />
-                        )}
+                        {corBadgeClass && <span className={`w-2 h-2 rounded-full mt-0.5 ${corBadgeClass}`} />}
                       </button>
                     );
                   })}
@@ -372,6 +387,86 @@ export default function TurnosPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* MODAL DE DETALHES E CANDIDATURA / DESISTÊNCIA DO ENFERMEIRO */}
+      {turnoDetalhe && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-4 animate-in fade-in">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base">Detalhes do Turno</h3>
+              <button onClick={() => setTurnoDetalhe(null)} className="p-1 hover:bg-slate-100 rounded-full text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <span className="text-slate-400 block font-medium">Instituição</span>
+                <strong className="text-slate-900 text-sm">{turnoDetalhe.instituicao.nome}</strong>
+                {turnoDetalhe.instituicao.morada && (
+                  <p className="text-slate-500 flex items-center gap-1 mt-0.5">
+                    <MapPin className="w-3.5 h-3.5" /> {turnoDetalhe.instituicao.morada}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <span className="text-slate-400 block">Data</span>
+                  <span className="font-bold text-slate-800">{new Date(turnoDetalhe.data).toLocaleDateString("pt-PT")}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Horário</span>
+                  <span className="font-bold text-slate-800">{turnoDetalhe.horaInicio} - {turnoDetalhe.horaFim}</span>
+                </div>
+              </div>
+
+              {turnoDetalhe.valorHora && (
+                <div className="pt-2 border-t border-slate-100">
+                  <span className="text-slate-400 block">Remuneração</span>
+                  <span className="font-bold text-emerald-800 text-sm">{turnoDetalhe.valorHora}€ / hora</span>
+                </div>
+              )}
+            </div>
+
+            {/* BOTÕES DE AÇÃO (REMOVER CANDIDATURA, CANDIDATAR OU DESISTIR) */}
+            <div className="pt-4 border-t border-slate-100 space-y-2">
+              {turnoDetalhe.candidaturas && turnoDetalhe.candidaturas.length > 0 && turnoDetalhe.candidaturas[0].estado === "PENDENTE" ? (
+                <button
+                  onClick={() => handleRemoverOuDesistir(turnoDetalhe.id)}
+                  disabled={submetendo}
+                  className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 border border-rose-200"
+                >
+                  <UserX className="w-4 h-4" />
+                  {submetendo ? "A remover..." : "Remover Candidatura"}
+                </button>
+              ) : (turnoDetalhe.estado === "PUBLICADO" || turnoDetalhe.estado === "AGUARDAR_ENFERMEIRO") ? (
+                <button
+                  onClick={() => handleCandidatar(turnoDetalhe.id)}
+                  disabled={submetendo}
+                  className="w-full bg-emerald-800 hover:bg-emerald-900 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  {submetendo ? "A submeter candidatura..." : "Candidatar-me a este Turno"}
+                </button>
+              ) : turnoDetalhe.estado === "ATRIBUIDO" ? (
+                <button
+                  onClick={() => handleRemoverOuDesistir(turnoDetalhe.id)}
+                  disabled={submetendo}
+                  className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 border border-rose-200"
+                >
+                  <UserX className="w-4 h-4" />
+                  {submetendo ? "A processar..." : "Desistir do Turno"}
+                </button>
+              ) : (
+                <div className="text-center p-3 bg-slate-50 rounded-2xl text-xs text-slate-500 font-medium">
+                  Este turno já se encontra em curso ou concluído.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

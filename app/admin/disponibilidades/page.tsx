@@ -149,7 +149,7 @@ export default function AdminDisponibilidadesPage() {
 
   // Turnos que possuem candidaturas (especialmente úteis para a vista de Candidaturas)
   const turnosComCandidaturas = useMemo(() => {
-    return turnos.filter((t) => t.candidaturas && t.candidaturas.length > 0);
+    return turnos.filter((t) => t.estado === "AGUARDAR_ENFERMEIRO" && t.candidaturas && t.candidaturas.some(c => c.estado === "PENDENTE"));
   }, [turnos]);
 
   // Cálculos do Calendário

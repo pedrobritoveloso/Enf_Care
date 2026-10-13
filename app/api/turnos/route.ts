@@ -202,6 +202,15 @@ export async function GET(req: Request) {
             },
           },
         },
+        // ADICIONAR ESTE BLOCO PARA O ENFERMEIRO VER A SUA CANDIDATURA:
+        candidaturas: {
+          where: enfermeiroIdAtual ? { enfermeiroId: enfermeiroIdAtual } : undefined,
+          select: {
+            id: true,
+            estado: true,
+            enfermeiroId: true,
+          },
+        },
         assiduidades: true,
       },
       orderBy: { data: "asc" },

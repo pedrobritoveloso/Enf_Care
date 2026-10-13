@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(
@@ -16,7 +18,16 @@ export async function POST(
       );
     }
 
-    // 1. Verificar se o turno existe e se tem enfermeiro associado
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
+    const utilizador = await prisma.utilizador.findUnique({
+      where: { email: session.user.email },
+      include: { enfermeiro: true },
+    });
+
     const turno = await prisma.turno.findUnique({
       where: { id: turnoId },
       include: { atribuicoes: true },
@@ -29,19 +40,27 @@ export async function POST(
       );
     }
 
-    if (turno.atribuicoes.length === 0) {
-      return NextResponse.json(
-        { error: "Este turno não tem nenhum enfermeiro associado para remover." },
-        { status: 400 }
-      );
-    }
+    // Se for o próprio enfermeiro a desistir, podemos identificar o enfermeiroId pelas atribuições
+    const enfermeiroId = utilizador?.tipo === "ENFERMEIRO" ? utilizador.enfermeiro?.id : null;
 
-    // 2. Executar a remoção e alteração de estado numa única transação atómica
+    // 2. Executar a remoção das atribuições, candidaturas e alteração de estado numa transação atómica
     const turnoAtualizado = await prisma.$transaction(async (tx) => {
-      // Elimina apenas a atribuição associada a ESTE turno especificamente
-      await tx.atribuicao.deleteMany({
-        where: { turnoId },
-      });
+      // Se for o enfermeiro, remove apenas a sua atribuição e candidatura. Se for admin, pode remover todas.
+      if (enfermeiroId) {
+        await tx.atribuicao.deleteMany({
+          where: { turnoId, enfermeiroId },
+        });
+        await tx.candidatura.deleteMany({
+          where: { turnoId, enfermeiroId },
+        });
+      } else {
+        await tx.atribuicao.deleteMany({
+          where: { turnoId },
+        });
+        await tx.candidatura.deleteMany({
+          where: { turnoId },
+        });
+      }
 
       // Atualiza o estado do turno para PUBLICADO (ficando novamente na bolsa)
       return await tx.turno.update({
@@ -51,13 +70,13 @@ export async function POST(
     });
 
     return NextResponse.json({
-      message: "Enfermeiro removido do turno com sucesso!",
+      message: "Turno disponibilizado novamente com sucesso!",
       turno: turnoAtualizado,
     });
   } catch (error) {
-    console.error("Erro ao desassociar enfermeiro:", error);
+    console.error("Erro ao desassociar turno:", error);
     return NextResponse.json(
-      { error: "Erro interno ao desassociar enfermeiro do turno." },
+      { error: "Erro interno ao processar a desistência do turno." },
       { status: 500 }
     );
   }

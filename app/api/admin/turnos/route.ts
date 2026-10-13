@@ -23,45 +23,60 @@ export async function GET(req: Request) {
     }
 
     const turnosAtribuidos = await prisma.turno.findMany({
-      where: {
-        estado: {
-          in: ["ATRIBUIDO", "EM_CURSO", "CONCLUIDO", "PUBLICADO"],
-        },
+  where: {
+    estado: {
+      in: ["ATRIBUIDO", "EM_CURSO", "CONCLUIDO", "PUBLICADO", "AGUARDAR_ENFERMEIRO"],
+    },
+  },
+  orderBy: {
+    data: "desc",
+  },
+  include: {
+    instituicao: {
+      select: {
+        id: true,
+        nome: true,
+        morada: true,
       },
-      orderBy: {
-        data: "desc",
-      },
+    },
+    atribuicoes: {
       include: {
-        instituicao: {
-          select: {
-            id: true,
-            nome: true,
-            morada: true,
-          },
-        },
-        atribuicoes: {
+        enfermeiro: {
           include: {
-            enfermeiro: {
-              include: {
-                utilizador: {
-                  select: {
-                    nome: true,
-                    email: true,
-                    telefone: true,
-                  },
-                },
+            utilizador: {
+              select: {
+                nome: true,
+                email: true,
+                telefone: true,
               },
             },
           },
         },
-        assiduidades: {
-          orderBy: {
-            entradaReal: "desc",
+      },
+    },
+    // ADICIONAR ESTE BLOCO PARA O ADMIN VER AS CANDIDATURAS:
+    candidaturas: {
+      include: {
+        enfermeiro: {
+          include: {
+            utilizador: {
+              select: {
+                nome: true,
+                email: true,
+              },
+            },
           },
-          take: 1,
         },
       },
-    });
+    },
+    assiduidades: {
+      orderBy: {
+        entradaReal: "desc",
+      },
+      take: 1,
+    },
+  },
+});
 
     return NextResponse.json(turnosAtribuidos);
   } catch (error: any) {
