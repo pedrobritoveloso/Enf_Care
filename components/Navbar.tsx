@@ -13,6 +13,7 @@ import {
   Users, 
   Building2, 
   TrendingUp, 
+  FileText, // Importado para o ícone de Relatórios
   LogOut,
   ChevronRight,
   User
@@ -36,14 +37,15 @@ export default function Navbar() {
 
   const perfilHref = isAdmin ? "/admin" : "/perfil";
 
-  // Arrays de navegação sem o item "Perfil"
+  // Arrays de navegação atualizados com Relatórios para o Administrador
   const adminNavItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Escala", href: "/admin/turnos", icon: Calendar },
-    { label: "Disponabilidades", href: "/admin/disponibilidades", icon: HeartHandshake },
+    { label: "Disponibilidades", href: "/admin/disponibilidades", icon: HeartHandshake },
     { label: "Enfermeiros", href: "/admin/enfermeiros", icon: Users },
     { label: "Instituições", href: "/admin/instituicoes", icon: Building2 },
     { label: "Receita", href: "/admin/receita", icon: TrendingUp },
+    { label: "Relatórios", href: "/admin/relatorios", icon: FileText }, // Adicionado aqui
   ];
 
   const enfermeiroNavItems = [
@@ -51,6 +53,7 @@ export default function Navbar() {
     { label: "Turnos Disponíveis", href: "/turnos", icon: Calendar },
     { label: "Minha Disponibilidade", href: "/disponibilidade", icon: HeartHandshake },
     { label: "Instituições", href: "/instituicoes", icon: Building2 },
+    { label: "Histórico", href: "/enfermeiro/historico", icon: FileText }, // Adicionado aqui
   ];
 
   const navItems = isAdmin ? adminNavItems : enfermeiroNavItems;
