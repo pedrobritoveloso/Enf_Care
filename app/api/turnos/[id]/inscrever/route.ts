@@ -8,7 +8,6 @@ export async function POST(
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    // Resolve os params quer venham como Promise (Next.js 15) ou objeto simples
     const params = await context.params;
     const turnoId = params.id;
 
@@ -34,7 +33,7 @@ export async function POST(
 
     let enfermeiro = utilizador.enfermeiro;
 
-    // 2. Se por alguma razão o perfil de enfermeiro ainda não existir, cria um
+    // 2. Se o perfil de enfermeiro ainda não existir, cria um
     if (!enfermeiro) {
       enfermeiro = await prisma.enfermeiro.create({
         data: {
@@ -44,35 +43,55 @@ export async function POST(
       });
     }
 
-    // 3. Executa a transação com o turnoId já validado
+    // 3. Executa a transação para submeter a candidatura
     const resultado = await prisma.$transaction(async (tx) => {
       const turno = await tx.turno.findUnique({
         where: { id: turnoId },
       });
 
       if (!turno || (turno.estado !== "PUBLICADO" && turno.estado !== "AGUARDAR_ENFERMEIRO")) {
-        throw new Error("Este turno já não se encontra disponível.");
+        throw new Error("Este turno já não se encontra disponível para candidaturas.");
       }
 
-      const atribuicao = await tx.atribuicao.create({
-        data: {
-          turnoId: turno.id,
-          enfermeiroId: enfermeiro.id,
+      // Verificar se o enfermeiro já submeteu candidatura a este turno
+      const candidaturaExistente = await tx.candidatura.findUnique({
+        where: {
+          turnoId_enfermeiroId: {
+            turnoId: turno.id,
+            enfermeiroId: enfermeiro.id,
+          },
         },
       });
 
-      await tx.turno.update({
-        where: { id: turno.id },
-        data: { estado: "ATRIBUIDO" },
+      if (candidaturaExistente) {
+        throw new Error("Já submeteu uma candidatura para este turno.");
+      }
+
+      // Criar a candidatura com estado PENDENTE (em vez de atribuição direta)
+      const candidatura = await tx.candidatura.create({
+        data: {
+          turnoId: turno.id,
+          enfermeiroId: enfermeiro.id,
+          estado: "PENDENTE", //[cite: 10]
+        },
       });
 
-      return atribuicao;
+      // Atualizar o estado do turno para indicar que tem candidaturas a aguardar validação
+      await tx.turno.update({
+        where: { id: turno.id },
+        data: { estado: "AGUARDAR_ENFERMEIRO" }, //[cite: 10]
+      });
+
+      return candidatura;
     });
 
-    return NextResponse.json({ message: "Turno reservado com sucesso!", resultado });
+    return NextResponse.json({
+      message: "Candidatura submetida com sucesso! Aguarde aprovação do administrador.",
+      resultado,
+    });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Erro ao aceitar o turno." },
+      { error: error.message || "Erro ao submeter candidatura." },
       { status: 400 }
     );
   }
