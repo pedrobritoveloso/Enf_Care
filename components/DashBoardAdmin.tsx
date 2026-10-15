@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Users, Building2, Calendar, Clock, X, AlertCircle } from "lucide-react";
+import { Users, Building2, Calendar, Clock, X, AlertCircle, CheckCircle2, Activity } from "lucide-react";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 
 interface Turno {
@@ -25,6 +25,13 @@ interface DashboardStats {
   turnosPublicadosCount: number;
   turnosAtribuidosLista: Turno[];
   turnosPublicadosLista: Turno[];
+  metricasHoje?: {
+    totalTurnos: number;
+    preenchidos: number;
+    disponiveis: number;
+    presentes: number;
+    horasTrabalhadas: number;
+  };
 }
 
 export default function DashboardAdmin() {
@@ -33,7 +40,6 @@ export default function DashboardAdmin() {
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<"ATRIBUIDOS" | "PUBLICADOS">("ATRIBUIDOS");
 
-  // Função para procurar as estatísticas envelopada em useCallback
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch("/api/dashboard/stats");
@@ -51,12 +57,10 @@ export default function DashboardAdmin() {
     }
   }, []);
 
-  // Fetch inicial
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
 
-  // Atualização automática dos dados a cada 15 segundos
   useAutoRefresh(fetchStats, 15000);
 
   if (loading) {
@@ -69,15 +73,9 @@ export default function DashboardAdmin() {
   };
 
   const getMensagemConclusao = (turno: Turno, temEnfermeiro: boolean) => {
-    if (!temEnfermeiro) {
-      return "Concluído (Sem enfermeiro atribuído).";
-    }
-    if (turno.motivoConclusao) {
-      return `Concluído (${turno.motivoConclusao}).`;
-    }
-    if (turno.assiduidades?.[0]?.saidaReal) {
-      return "Concluído (Check-out efetuado).";
-    }
+    if (!temEnfermeiro) return "Concluído (Sem enfermeiro atribuído).";
+    if (turno.motivoConclusao) return `Concluído (${turno.motivoConclusao}).`;
+    if (turno.assiduidades?.[0]?.saidaReal) return "Concluído (Check-out efetuado).";
     return "Concluído por expiração de horário.";
   };
 
@@ -89,26 +87,62 @@ export default function DashboardAdmin() {
     }
   };
 
+  const mHoje = stats?.metricasHoje;
+
   return (
-    <div className="space-y-3">
-      {/* Cards de Métricas */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-400 font-medium">Enfermeiros Ativos</p>
-          <h2 className="text-2xl font-black text-slate-900 mt-0.5">{stats?.enfermeirosCount ?? 0}</h2>
+    <div className="space-y-4">
+      {/* SECÇÃO 9: MÉTRICAS EM TEMPO REAL DE HOJE */}
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-5 rounded-3xl shadow-md space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">Resumo de Hoje em Tempo Real</h3>
+          </div>
+          <span className="text-[11px] bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full font-semibold">
+            {mHoje?.presentes ?? 0} Enfermeiros Presentes
+          </span>
         </div>
-        <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
-          <Users className="w-6 h-6" />
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/50">
+            <p className="text-[11px] text-slate-400">Turnos Hoje</p>
+            <p className="text-lg font-black text-white mt-0.5">{mHoje?.totalTurnos ?? 0}</p>
+          </div>
+          <div className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/50">
+            <p className="text-[11px] text-slate-400">Atribuídos</p>
+            <p className="text-lg font-black text-emerald-400 mt-0.5">{mHoje?.preenchidos ?? 0}</p>
+          </div>
+          <div className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/50">
+            <p className="text-[11px] text-slate-400">Disponíveis</p>
+            <p className="text-lg font-black text-amber-400 mt-0.5">{mHoje?.disponiveis ?? 0}</p>
+          </div>
+          <div className="bg-slate-800/80 p-3 rounded-2xl border border-slate-700/50">
+            <p className="text-[11px] text-slate-400">Horas Feitas</p>
+            <p className="text-lg font-black text-blue-400 mt-0.5">{mHoje?.horasTrabalhadas?.toFixed(1) ?? 0}h</p>
+          </div>
         </div>
       </div>
 
-      <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-400 font-medium">Instituições</p>
-          <h2 className="text-2xl font-black text-slate-900 mt-0.5">{stats?.instituicoesCount ?? 0}</h2>
+      {/* Cards de Métricas Gerais */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Enfermeiros Ativos</p>
+            <h2 className="text-2xl font-black text-slate-900 mt-0.5">{stats?.enfermeirosCount ?? 0}</h2>
+          </div>
+          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
+            <Users className="w-6 h-6" />
+          </div>
         </div>
-        <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
-          <Building2 className="w-6 h-6" />
+
+        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-medium">Instituições</p>
+            <h2 className="text-2xl font-black text-slate-900 mt-0.5">{stats?.instituicoesCount ?? 0}</h2>
+          </div>
+          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
+            <Building2 className="w-6 h-6" />
+          </div>
         </div>
       </div>
 

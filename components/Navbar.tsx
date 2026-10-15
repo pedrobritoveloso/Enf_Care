@@ -51,9 +51,9 @@ export default function Navbar() {
   const enfermeiroNavItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Turnos Disponíveis", href: "/turnos", icon: Calendar },
-    { label: "Minha Disponibilidade", href: "/disponibilidade", icon: HeartHandshake },
+    { label: "Meu Horário", href: "/enfermeiro/horario", icon: HeartHandshake }, // Atualizado aqui
     { label: "Instituições", href: "/instituicoes", icon: Building2 },
-    { label: "Histórico", href: "/enfermeiro/historico", icon: FileText }, // Adicionado aqui
+    { label: "Histórico", href: "/enfermeiro/historico", icon: FileText },
   ];
 
   const navItems = isAdmin ? adminNavItems : enfermeiroNavItems;

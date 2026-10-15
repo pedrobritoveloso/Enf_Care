@@ -71,7 +71,11 @@ export default function ScannerPage() {
       )}
 
       {mensagem && !loading && (
-        <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl text-center text-xs text-emerald-700 font-medium">
+        <div className={`p-4 rounded-2xl text-center text-xs font-medium border ${
+          mensagem.includes("sucesso") 
+            ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
+            : "bg-rose-50 border-rose-200 text-rose-700"
+        }`}>
           {mensagem}
         </div>
       )}

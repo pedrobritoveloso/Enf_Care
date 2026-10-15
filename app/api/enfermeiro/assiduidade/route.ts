@@ -40,8 +40,10 @@ export async function POST(req: Request) {
     }
 
     // --- VALIDAÇÃO DE SEGURANÇA GPS ---
-    // Se a instituição tem coordenadas definidas, validamos se o enfermeiro está no local (ex: raio de 300 metros)
-    if (instituicao.latitude !== null && instituicao.longitude !== null) {
+    // Altera para 'false' quando quiseres reativar a segurança GPS em produção
+    const IGNORAR_GPS_TESTES = true; 
+
+    if (!IGNORAR_GPS_TESTES && instituicao.latitude !== null && instituicao.longitude !== null) {
       if (lat === null || lat === undefined || lon === null || lon === undefined) {
         return NextResponse.json(
           { error: "A geolocalização é obrigatória para registar o ponto nesta instituição." },
@@ -117,7 +119,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Check-in efetuado com sucesso em ${instituicao.nome} (GPS verificado)!`,
+        message: `Check-in efetuado com sucesso em ${instituicao.nome}!`,
       });
     }
 

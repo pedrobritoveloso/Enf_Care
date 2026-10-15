@@ -30,6 +30,11 @@ export async function GET(req: Request) {
 
     // --- LÓGICA PARA ADMIN ---
     if (role === "ADMIN") {
+      const hojeInicio = new Date();
+      hojeInicio.setHours(0, 0, 0, 0);
+      const hojeFim = new Date();
+      hojeFim.setHours(23, 59, 59, 999);
+
       const [
         enfermeirosCount,
         instituicoesCount,
@@ -37,6 +42,8 @@ export async function GET(req: Request) {
         turnosPublicadosCount,
         turnosAtribuidosLista,
         turnosPublicadosLista,
+        turnosHoje,
+        assiduidadesHoje,
       ] = await Promise.all([
         prisma.enfermeiro.count(),
         prisma.instituicao.count(),
@@ -66,7 +73,39 @@ export async function GET(req: Request) {
             instituicao: { select: { nome: true } },
           },
         }),
+        // Turnos previstos para hoje
+        prisma.turno.findMany({
+          where: {
+            data: {
+              gte: hojeInicio,
+              lte: hojeFim,
+            },
+          },
+          include: {
+            atribuicoes: true,
+          },
+        }),
+        // Assiduidades registadas hoje
+        prisma.assiduidade.findMany({
+          where: {
+            OR: [
+              { entradaReal: { gte: hojeInicio, lte: hojeFim } },
+              { saidaReal: { gte: hojeInicio, lte: hojeFim } },
+            ],
+          },
+          include: {
+            turno: true,
+          },
+        }),
       ]);
+
+      // Métricas avançadas do dia (Secção 9)
+      const totalTurnosHoje = turnosHoje.length;
+      const turnosPreenchidosHoje = turnosHoje.filter(t => t.atribuicoes.length > 0).length;
+      const turnosDisponiveisHoje = totalTurnosHoje - turnosPreenchidosHoje;
+      
+      const presentesHoje = assiduidadesHoje.filter(a => a.entradaReal && !a.saidaReal).length;
+      const totalHorasHoje = assiduidadesHoje.reduce((acc, curr) => acc + (curr.horasContabilizadas || 0), 0);
 
       return NextResponse.json({
         role: "ADMIN",
@@ -76,6 +115,13 @@ export async function GET(req: Request) {
         turnosPublicadosCount,
         turnosAtribuidosLista,
         turnosPublicadosLista,
+        metricasHoje: {
+          totalTurnos: totalTurnosHoje,
+          preenchidos: turnosPreenchidosHoje,
+          disponiveis: turnosDisponiveisHoje,
+          presentes: presentesHoje,
+          horasTrabalhadas: totalHorasHoje,
+        },
       });
     }
 
