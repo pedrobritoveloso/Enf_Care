@@ -3,6 +3,19 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 
+// Função para calcular a distância em metros entre duas coordenadas (Fórmula de Haversine)
+function calcularDistanciaMetros(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Raio da Terra em metros
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -25,6 +38,28 @@ export async function POST(req: Request) {
     if (!instituicao) {
       return NextResponse.json({ error: "QR Code de instituição inválido ou não reconhecido." }, { status: 404 });
     }
+
+    // --- VALIDAÇÃO DE SEGURANÇA GPS ---
+    // Se a instituição tem coordenadas definidas, validamos se o enfermeiro está no local (ex: raio de 300 metros)
+    if (instituicao.latitude !== null && instituicao.longitude !== null) {
+      if (lat === null || lat === undefined || lon === null || lon === undefined) {
+        return NextResponse.json(
+          { error: "A geolocalização é obrigatória para registar o ponto nesta instituição." },
+          { status: 400 }
+        );
+      }
+
+      const distancia = calcularDistanciaMetros(lat, lon, instituicao.latitude, instituicao.longitude);
+      const RAIO_MAXIMO_METROS = 300; // Raio de tolerância permitido
+
+      if (distancia > RAIO_MAXIMO_METROS) {
+        return NextResponse.json(
+          { error: `Validação GPS falhou: Encontra-se a ${Math.round(distancia)}m da instituição (máximo permitido: ${RAIO_MAXIMO_METROS}m).` },
+          { status: 400 }
+        );
+      }
+    }
+    // ---------------------------------
 
     // 2. Obter o enfermeiro logado
     const utilizador = await prisma.utilizador.findUnique({
@@ -82,7 +117,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Check-in efetuado com sucesso em ${instituicao.nome}!`,
+        message: `Check-in efetuado com sucesso em ${instituicao.nome} (GPS verificado)!`,
       });
     }
 

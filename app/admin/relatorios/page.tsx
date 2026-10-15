@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Printer, Calendar } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Printer, Calendar, Building2 } from "lucide-react";
 
 interface RelatorioItem {
   id: string;
@@ -20,6 +20,7 @@ interface RelatorioItem {
     horaFim: string;
     valorHora?: number;
     instituicao: {
+      id: string;
       nome: string;
     };
   };
@@ -29,9 +30,11 @@ export default function RelatoriosAdminPage() {
   const [mesSelecionado, setMesSelecionado] = useState(
     new Date().toISOString().slice(0, 7) // "YYYY-MM"
   );
-  const [dados, setDados] = useState<RelatorioItem[]>([]);
+  const [instituicaoSelecionada, setInstituicaoSelecionada] = useState("TODAS");
+  const [dadosBrutos, setDadosBrutos] = useState<RelatorioItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Carregar dados do relatório para o mês selecionado
   useEffect(() => {
     async function fetchRelatorio() {
       setLoading(true);
@@ -39,10 +42,13 @@ export default function RelatoriosAdminPage() {
         const res = await fetch(`/api/admin/relatorios?mes=${mesSelecionado}`);
         if (res.ok) {
           const json = await res.json();
-          setDados(json.assiduidades || []);
+          setDadosBrutos(json.assiduidades || []);
+        } else {
+          setDadosBrutos([]);
         }
       } catch (err) {
         console.error("Erro ao carregar relatório:", err);
+        setDadosBrutos([]);
       } finally {
         setLoading(false);
       }
@@ -50,8 +56,31 @@ export default function RelatoriosAdminPage() {
     fetchRelatorio();
   }, [mesSelecionado]);
 
+  // Extrair lista única de instituições a partir dos dados obtidos
+  const instituicoes = useMemo(() => {
+    const map = new Map<string, string>();
+    dadosBrutos.forEach((item) => {
+      if (item.turno?.instituicao) {
+        map.set(item.turno.instituicao.id, item.turno.instituicao.nome);
+      }
+    });
+    return Array.from(map, ([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [dadosBrutos]);
+
+  // Filtrar os dados com base na instituição selecionada
+  const dados = useMemo(() => {
+    if (instituicaoSelecionada === "TODAS") return dadosBrutos;
+    return dadosBrutos.filter(
+      (item) => item.turno.instituicao.id === instituicaoSelecionada
+    );
+  }, [dadosBrutos, instituicaoSelecionada]);
+
   const totalHoras = dados.reduce((acc, item) => acc + (item.horasContabilizadas || 0), 0);
   const totalRegistos = dados.length;
+
+  const instituicaoNomeAtual = instituicaoSelecionada === "TODAS" 
+    ? "Todas as Instituições" 
+    : instituicoes.find(i => i.id === instituicaoSelecionada)?.nome || "Instituição Específica";
 
   const formatHora = (dateStr: string) => {
     if (!dateStr) return "--:--";
@@ -77,7 +106,7 @@ export default function RelatoriosAdminPage() {
     }
 
     const htmlTabela = dados.length === 0 
-      ? `<tr><td colspan="5" style="text-align: center; font-style: italic; color: #666; padding: 15px;">Sem registos para o período selecionado.</td></tr>`
+      ? `<tr><td colspan="5" style="text-align: center; font-style: italic; color: #666; padding: 15px;">Sem registos para os filtros selecionados.</td></tr>`
       : dados.map(item => `
           <tr>
             <td style="border: 1px solid #000; padding: 8px 12px;">${new Date(item.turno.data).toLocaleDateString("pt-PT")}</td>
@@ -103,9 +132,14 @@ export default function RelatoriosAdminPage() {
               padding: 20mm;
             }
             h1 {
-              font-size: 20pt;
+              font-size: 18pt;
               font-weight: bold;
-              margin: 0 0 25px 0;
+              margin: 0 0 5px 0;
+            }
+            .subtitulo {
+              font-size: 11pt;
+              color: #555;
+              margin-bottom: 25px;
             }
             .linha-info {
               display: flex;
@@ -131,15 +165,16 @@ export default function RelatoriosAdminPage() {
           </style>
         </head>
         <body>
-          <h1>My EnfCare - Folha de Horas e Assiduidade</h1>
+          <h1>My EnfCare — Folha de Horas e Assiduidade</h1>
+          <div class="subtitulo">Instituição: <strong>${instituicaoNomeAtual}</strong></div>
           
           <div class="linha-info">
-            <div><strong>Periodo de referencia:</strong> ${mesSelecionado}</div>
+            <div><strong>Período de referência:</strong> ${mesSelecionado}</div>
             <div><strong>Emitido em:</strong> ${dataEmissaoFormatada}</div>
           </div>
 
           <div class="linha-info" style="margin-bottom: 30px;">
-            <div><strong>Turnos Concluidos:</strong> ${totalRegistos}</div>
+            <div><strong>Turnos Concluídos:</strong> ${totalRegistos}</div>
             <div><strong>Horas Contabilizadas:</strong> ${totalHoras.toFixed(2)} horas</div>
           </div>
 
@@ -172,9 +207,6 @@ export default function RelatoriosAdminPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6 pb-20">
-      {/* ========================================================= */}
-      {/* 1. PÁGINA NORMAL (TELEMÓVEL) - MANTIDA EXATAMENTE IGUAL    */}
-      {/* ========================================================= */}
       <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-4">
         <div>
           <h1 className="text-xl font-extrabold text-slate-900">Relatório Mensal de Assiduidade</h1>
@@ -182,14 +214,34 @@ export default function RelatoriosAdminPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
-            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-            <input
-              type="month"
-              value={mesSelecionado}
-              onChange={(e) => setMesSelecionado(e.target.value)}
-              className="bg-transparent font-bold text-slate-700 outline-none cursor-pointer"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Seletor de Mês */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
+              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                type="month"
+                value={mesSelecionado}
+                onChange={(e) => setMesSelecionado(e.target.value)}
+                className="bg-transparent font-bold text-slate-700 outline-none cursor-pointer"
+              />
+            </div>
+
+            {/* Seletor de Instituição */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">
+              <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+              <select
+                value={instituicaoSelecionada}
+                onChange={(e) => setInstituicaoSelecionada(e.target.value)}
+                className="bg-transparent font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="TODAS">Todas as Instituições</option>
+                {instituicoes.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    {inst.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <button
@@ -206,7 +258,9 @@ export default function RelatoriosAdminPage() {
         <div className="border-b border-slate-200 pb-4 flex justify-between items-end">
           <div>
             <h2 className="text-lg font-black text-slate-900">MyEnfCare — Folha de Horas e Assiduidade</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Período de referência: <strong>{mesSelecionado}</strong></p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Instituição: <strong>{instituicaoNomeAtual}</strong> • Período: <strong>{mesSelecionado}</strong>
+            </p>
           </div>
           <div className="text-xs text-slate-400">Emitido em: {dataEmissaoFormatada}</div>
         </div>
@@ -225,7 +279,7 @@ export default function RelatoriosAdminPage() {
         {loading ? (
           <div className="text-center py-10 text-xs text-slate-400">A carregar dados do relatório...</div>
         ) : dados.length === 0 ? (
-          <div className="text-center py-10 text-xs text-slate-400 italic">Nenhum registo de assiduidade encontrado.</div>
+          <div className="text-center py-10 text-xs text-slate-400 italic">Nenhum registo de assiduidade encontrado para os filtros selecionados.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
