@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { 
   Menu, 
@@ -32,8 +32,10 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session, status } = useSession();
 
   const fetchNotificacoes = useCallback(async () => {
@@ -53,10 +55,21 @@ export default function Navbar() {
   useEffect(() => {
     if (status === "authenticated") {
       fetchNotificacoes();
-      const interval = setInterval(fetchNotificacoes, 15000); // Polling a cada 15s
+      const interval = setInterval(fetchNotificacoes, 15000);
       return () => clearInterval(interval);
     }
   }, [status, fetchNotificacoes]);
+
+  // Fechar o dropdown automaticamente ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowNotifDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const marcarComoLidas = async () => {
     try {
@@ -64,6 +77,26 @@ export default function Navbar() {
       setNotificacoes((prev) => prev.map((n) => ({ ...n, lida: true })));
     } catch (err) {
       console.error("Erro ao marcar notificações como lidas:", err);
+    }
+  };
+
+  const handleNotificacaoClick = (notificacao: Notificacao) => {
+    setShowNotifDropdown(false);
+
+    const userRole = (session?.user as any)?.tipo || session?.user?.role;
+    const isAdmin = userRole === "ADMIN";
+
+    // Direcionar com base no tipo de utilizador e contexto da notificação
+    if (isAdmin) {
+      // Se for admin e envolver candidaturas ou turnos, vai para a escala/turnos
+      router.push("/admin/turnos");
+    } else {
+      // Se for enfermeiro, vai para o seu horário / turnos disponíveis
+      if (notificacao.titulo.toLowerCase().includes("aprovada") || notificacao.titulo.toLowerCase().includes("horário")) {
+        router.push("/enfermeiro/horario");
+      } else {
+        router.push("/turnos");
+      }
     }
   };
 
@@ -77,7 +110,6 @@ export default function Navbar() {
 
   const userRole = (session?.user as any)?.tipo || session?.user?.role;
   const isAdmin = userRole === "ADMIN";
-
   const perfilHref = isAdmin ? "/admin" : "/perfil";
 
   const adminNavItems = [
@@ -122,8 +154,8 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Zona de Ações Superiores: Sino de Notificações e Perfil */}
-        <div className="relative flex items-center gap-1">
+        {/* Zona de Ações Superiores: Sino e Perfil */}
+        <div className="relative flex items-center gap-1" ref={dropdownRef}>
           {/* Botão do Sino */}
           <button
             onClick={() => {
@@ -163,13 +195,17 @@ export default function Navbar() {
                   notificacoes.map((n) => (
                     <div
                       key={n.id}
-                      className={`p-3 rounded-xl border text-xs space-y-1 transition-colors ${
+                      onClick={() => handleNotificacaoClick(n)}
+                      className={`p-3 rounded-xl border text-xs space-y-1 transition-all cursor-pointer hover:shadow-sm ${
                         n.lida
-                          ? "bg-slate-50 border-slate-100"
-                          : "bg-emerald-50/60 border-emerald-200"
+                          ? "bg-slate-50 border-slate-100 hover:bg-slate-100/80"
+                          : "bg-emerald-50/60 border-emerald-200 hover:bg-emerald-100/60"
                       }`}
                     >
-                      <p className="font-bold text-slate-900 leading-snug">{n.titulo}</p>
+                      <div className="flex justify-between items-start gap-1">
+                        <p className="font-bold text-slate-900 leading-snug">{n.titulo}</p>
+                        {!n.lida && <span className="w-2 h-2 rounded-full bg-emerald-600 flex-shrink-0" />}
+                      </div>
                       <p className="text-slate-600 text-[11px] leading-relaxed">{n.mensagem}</p>
                       <span className="text-[9px] text-slate-400 block pt-1 font-medium">
                         {new Date(n.criadoEm).toLocaleString("pt-PT")}
