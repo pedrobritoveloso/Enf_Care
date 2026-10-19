@@ -86,27 +86,30 @@ export default function Navbar() {
     const userRole = (session?.user as any)?.tipo || session?.user?.role;
     const isAdmin = userRole === "ADMIN";
 
-    const tituloLower = notificacao.titulo.toLowerCase();
-    const mensagemLower = notificacao.mensagem.toLowerCase();
+    // Normalizar para minúsculas e remover acentos para evitar falhas de correspondência
+    const tituloLower = notificacao.titulo.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const mensagemLower = notificacao.mensagem.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
     if (isAdmin) {
-      // Se for admin e envolver candidatura ou turnos, vai para a página de disponibilidades/candidaturas
-      if (tituloLower.includes("candidatura") || mensagemLower.includes("candidatou")) {
+      if (tituloLower.includes("desistencia") || tituloLower.includes("candidatura") || mensagemLower.includes("desistiu")) {
         router.push("/admin/disponibilidades");
       } else {
         router.push("/admin/turnos");
       }
     } else {
-      // Se for enfermeiro e a candidatura foi aprovada / aceite, vai para o seu horário
+      // Se for enfermeiro: verificar se é turno atribuído, aprovado ou aceite -> Vai para o Horário
       if (
+        tituloLower.includes("atribuido") || 
         tituloLower.includes("aprovada") || 
         tituloLower.includes("aceite") || 
-        mensagemLower.includes("aprovada") || 
-        mensagemLower.includes("horário")
+        mensagemLower.includes("atribuido") ||
+        mensagemLower.includes("horario")
       ) {
         router.push("/enfermeiro/horario");
-      } else {
+      } else if (tituloLower.includes("disponivel") || mensagemLower.includes("aberto")) {
         router.push("/turnos");
+      } else {
+        router.push("/enfermeiro/horario"); // Fallback seguro para o horário do enfermeiro
       }
     }
   };
