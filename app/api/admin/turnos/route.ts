@@ -23,60 +23,59 @@ export async function GET(req: Request) {
     }
 
     const turnosAtribuidos = await prisma.turno.findMany({
-  where: {
-    estado: {
-      in: ["ATRIBUIDO", "EM_CURSO", "CONCLUIDO", "PUBLICADO", "AGUARDAR_ENFERMEIRO"],
-    },
-  },
-  orderBy: {
-    data: "desc",
-  },
-  include: {
-    instituicao: {
-      select: {
-        id: true,
-        nome: true,
-        morada: true,
-      },
-    },
-    atribuicoes: {
-      include: {
-        enfermeiro: {
-          include: {
-            utilizador: {
-              select: {
-                nome: true,
-                email: true,
-                telefone: true,
-              },
-            },
-          },
+      where: {
+        estado: {
+          in: ["ATRIBUIDO", "EM_CURSO", "CONCLUIDO", "PUBLICADO", "AGUARDAR_ENFERMEIRO"],
         },
       },
-    },
-    // ADICIONAR ESTE BLOCO PARA O ADMIN VER AS CANDIDATURAS:
-    candidaturas: {
-      include: {
-        enfermeiro: {
-          include: {
-            utilizador: {
-              select: {
-                nome: true,
-                email: true,
-              },
-            },
-          },
-        },
-      },
-    },
-    assiduidades: {
       orderBy: {
-        entradaReal: "desc",
+        data: "desc",
       },
-      take: 1,
-    },
-  },
-});
+      include: {
+        instituicao: {
+          select: {
+            id: true,
+            nome: true,
+            morada: true,
+          },
+        },
+        atribuicoes: {
+          include: {
+            enfermeiro: {
+              include: {
+                utilizador: {
+                  select: {
+                    nome: true,
+                    email: true,
+                    telefone: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        candidaturas: {
+          include: {
+            enfermeiro: {
+              include: {
+                utilizador: {
+                  select: {
+                    nome: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        assiduidades: {
+          orderBy: {
+            entradaReal: "desc",
+          },
+          take: 1,
+        },
+      },
+    });
 
     return NextResponse.json(turnosAtribuidos);
   } catch (error: any) {
@@ -155,6 +154,29 @@ export async function POST(req: Request) {
           enfermeiroId: enfermeiroExistente.id,
         },
       });
+
+      // --- 4. DISPARAR NOTIFICAÇÃO PARA O ENFERMEIRO ATRIBUÍDO ---
+      const instituicao = await tx.instituicao.findUnique({
+        where: { id: instituicaoId },
+      });
+      const nomeInst = instituicao?.nome || "Instituição";
+      const dataFormatada = new Date(data).toLocaleDateString("pt-PT");
+
+      const enfermeiroReg = await tx.enfermeiro.findUnique({
+        where: { id: enfermeiroExistente.id },
+        select: { utilizadorId: true },
+      });
+
+      if (enfermeiroReg) {
+        await tx.notificacao.create({
+          data: {
+            utilizadorId: enfermeiroReg.utilizadorId,
+            titulo: "Novo Turno Atribuído",
+            mensagem: `Um turno na instituição ${nomeInst} no dia ${dataFormatada} às ${horaInicio} foi-lhe atribuído.`,
+          },
+        });
+      }
+      // ------------------------------------------------------------
 
       return turno;
     });
