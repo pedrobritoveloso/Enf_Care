@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -13,16 +13,59 @@ import {
   Users, 
   Building2, 
   TrendingUp, 
-  FileText, // Importado para o ícone de Relatórios
+  FileText, 
   LogOut,
   ChevronRight,
-  User
+  User,
+  Bell
 } from "lucide-react";
+
+interface Notificacao {
+  id: string;
+  titulo: string;
+  mensagem: string;
+  lida: boolean;
+  criadoEm: string;
+}
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
   const pathname = usePathname();
   const { data: session, status } = useSession();
+
+  const fetchNotificacoes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notificacoes");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setNotificacoes(data);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao carregar notificações:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      fetchNotificacoes();
+      const interval = setInterval(fetchNotificacoes, 15000); // Polling a cada 15s
+      return () => clearInterval(interval);
+    }
+  }, [status, fetchNotificacoes]);
+
+  const marcarComoLidas = async () => {
+    try {
+      await fetch("/api/notificacoes", { method: "PATCH" });
+      setNotificacoes((prev) => prev.map((n) => ({ ...n, lida: true })));
+    } catch (err) {
+      console.error("Erro ao marcar notificações como lidas:", err);
+    }
+  };
 
   if (
     status !== "authenticated" || 
@@ -37,7 +80,6 @@ export default function Navbar() {
 
   const perfilHref = isAdmin ? "/admin" : "/perfil";
 
-  // Arrays de navegação atualizados com Relatórios para o Administrador
   const adminNavItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Escala", href: "/admin/turnos", icon: Calendar },
@@ -45,18 +87,19 @@ export default function Navbar() {
     { label: "Enfermeiros", href: "/admin/enfermeiros", icon: Users },
     { label: "Instituições", href: "/admin/instituicoes", icon: Building2 },
     { label: "Receita", href: "/admin/receita", icon: TrendingUp },
-    { label: "Relatórios", href: "/admin/relatorios", icon: FileText }, // Adicionado aqui
+    { label: "Relatórios", href: "/admin/relatorios", icon: FileText },
   ];
 
   const enfermeiroNavItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Turnos Disponíveis", href: "/turnos", icon: Calendar },
-    { label: "Meu Horário", href: "/enfermeiro/horario", icon: HeartHandshake }, // Atualizado aqui
+    { label: "Meu Horário", href: "/enfermeiro/horario", icon: HeartHandshake },
     { label: "Instituições", href: "/instituicoes", icon: Building2 },
     { label: "Histórico", href: "/enfermeiro/historico", icon: FileText },
   ];
 
   const navItems = isAdmin ? adminNavItems : enfermeiroNavItems;
+  const naoLidasCount = notificacoes.filter((n) => !n.lida).length;
 
   return (
     <>
@@ -79,21 +122,81 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {/* Único acesso ao Perfil (Canto Superior Direito) */}
-        <Link
-          href={perfilHref}
-          className={`p-2 rounded-xl transition-all ${
-            pathname === perfilHref
-              ? "bg-brand-800 text-white"
-              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-          }`}
-          title="O Meu Perfil"
-        >
-          <User className="w-5 h-5" />
-        </Link>
+        {/* Zona de Ações Superiores: Sino de Notificações e Perfil */}
+        <div className="relative flex items-center gap-1">
+          {/* Botão do Sino */}
+          <button
+            onClick={() => {
+              const novoEstado = !showNotifDropdown;
+              setShowNotifDropdown(novoEstado);
+              if (novoEstado && naoLidasCount > 0) {
+                marcarComoLidas();
+              }
+            }}
+            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 relative transition-all cursor-pointer"
+            title="Notificações"
+          >
+            <Bell className="w-5 h-5" />
+            {naoLidasCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white" />
+            )}
+          </button>
+
+          {/* Dropdown de Notificações */}
+          {showNotifDropdown && (
+            <div className="absolute right-0 top-12 w-80 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 space-y-3 animate-in fade-in">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
+                  Notificações
+                </h4>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  {notificacoes.length} total
+                </span>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                {notificacoes.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4 italic">
+                    Sem notificações.
+                  </p>
+                ) : (
+                  notificacoes.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-3 rounded-xl border text-xs space-y-1 transition-colors ${
+                        n.lida
+                          ? "bg-slate-50 border-slate-100"
+                          : "bg-emerald-50/60 border-emerald-200"
+                      }`}
+                    >
+                      <p className="font-bold text-slate-900 leading-snug">{n.titulo}</p>
+                      <p className="text-slate-600 text-[11px] leading-relaxed">{n.mensagem}</p>
+                      <span className="text-[9px] text-slate-400 block pt-1 font-medium">
+                        {new Date(n.criadoEm).toLocaleString("pt-PT")}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Acesso ao Perfil */}
+          <Link
+            href={perfilHref}
+            className={`p-2 rounded-xl transition-all ${
+              pathname === perfilHref
+                ? "bg-brand-800 text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            }`}
+            title="O Meu Perfil"
+          >
+            <User className="w-5 h-5" />
+          </Link>
+        </div>
       </header>
 
-      {/* Overlay Escuro */}
+      {/* Overlay Escuro para o Drawer Mobile */}
       {isOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 transition-opacity"

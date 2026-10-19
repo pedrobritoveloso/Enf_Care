@@ -41,6 +41,7 @@ model Utilizador {
   atualizadoEm DateTime    @updatedAt
   enfermeiro Enfermeiro?
   auditorias AuditoriaLog[]
+  notificacoes Notificacao[]
 }
 
 model Enfermeiro {
@@ -154,4 +155,15 @@ model AuditoriaLog {
   dataHora        DateTime @default(now())
 
   utilizador Utilizador @relation(fields: [utilizadorId], references: [id])
+}
+
+model Notificacao {
+  id           String     @id @default(uuid())
+  utilizadorId String
+  titulo       String
+  mensagem     String
+  lida         Boolean    @default(false)
+  criadoEm     DateTime   @default(now())
+
+  utilizador   Utilizador @relation(fields: [utilizadorId], references: [id], onDelete: Cascade)
 }

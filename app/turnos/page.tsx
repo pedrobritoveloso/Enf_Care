@@ -38,6 +38,8 @@ interface Turno {
     id: string;
     estado: string;
   }>;
+  atribuidoAMim?: boolean;
+  temMinhaCandidaturaPendente?: boolean;
 }
 
 export default function TurnosPage() {
@@ -431,9 +433,9 @@ export default function TurnosPage() {
               )}
             </div>
 
-            {/* BOTÕES DE AÇÃO (REMOVER CANDIDATURA, CANDIDATAR OU DESISTIR) */}
+            {/* BOTÕES DE AÇÃO CONDICIONADOS */}
             <div className="pt-4 border-t border-slate-100 space-y-2">
-              {turnoDetalhe.candidaturas && turnoDetalhe.candidaturas.length > 0 && turnoDetalhe.candidaturas[0].estado === "PENDENTE" ? (
+              {turnoDetalhe.temMinhaCandidaturaPendente ? (
                 <button
                   onClick={() => handleRemoverOuDesistir(turnoDetalhe.id)}
                   disabled={submetendo}
@@ -442,7 +444,7 @@ export default function TurnosPage() {
                   <UserX className="w-4 h-4" />
                   {submetendo ? "A remover..." : "Remover Candidatura"}
                 </button>
-              ) : (turnoDetalhe.estado === "PUBLICADO" || turnoDetalhe.estado === "AGUARDAR_ENFERMEIRO") ? (
+              ) : (turnoDetalhe.estado === "PUBLICADO" || turnoDetalhe.estado === "AGUARDAR_ENFERMEIRO") && !turnoDetalhe.atribuidoAMim ? (
                 <button
                   onClick={() => handleCandidatar(turnoDetalhe.id)}
                   disabled={submetendo}
@@ -451,7 +453,7 @@ export default function TurnosPage() {
                   <Send className="w-4 h-4" />
                   {submetendo ? "A submeter candidatura..." : "Candidatar-me a este Turno"}
                 </button>
-              ) : turnoDetalhe.estado === "ATRIBUIDO" ? (
+              ) : turnoDetalhe.atribuidoAMim ? (
                 <button
                   onClick={() => handleRemoverOuDesistir(turnoDetalhe.id)}
                   disabled={submetendo}
@@ -462,7 +464,9 @@ export default function TurnosPage() {
                 </button>
               ) : (
                 <div className="text-center p-3 bg-slate-50 rounded-2xl text-xs text-slate-500 font-medium">
-                  Este turno já se encontra em curso ou concluído.
+                  {turnoDetalhe.estado === "ATRIBUIDO"
+                    ? "Este turno já se encontra atribuído a outro enfermeiro."
+                    : "Este turno já se encontra em curso ou concluído."}
                 </div>
               )}
             </div>

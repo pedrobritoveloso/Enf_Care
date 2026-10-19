@@ -28,6 +28,10 @@ export async function POST(
       include: { enfermeiro: true },
     });
 
+    if (!utilizador) {
+      return NextResponse.json({ error: "Utilizador não encontrado." }, { status: 404 });
+    }
+
     const turno = await prisma.turno.findUnique({
       where: { id: turnoId },
       include: { atribuicoes: true },
@@ -40,13 +44,30 @@ export async function POST(
       );
     }
 
-    // Se for o próprio enfermeiro a desistir, podemos identificar o enfermeiroId pelas atribuições
-    const enfermeiroId = utilizador?.tipo === "ENFERMEIRO" ? utilizador.enfermeiro?.id : null;
+    const isAdmin = utilizador.tipo === "ADMIN";
+    const enfermeiroId = utilizador.enfermeiro?.id;
 
-    // 2. Executar a remoção das atribuições, candidaturas e alteração de estado numa transação atómica
+    // Se for enfermeiro, validamos estritamente se o turno está atribuído a ele próprio
+    if (!isAdmin) {
+      if (!enfermeiroId) {
+        return NextResponse.json({ error: "Perfil de enfermeiro não encontrado." }, { status: 403 });
+      }
+
+      const temAtribuicao = turno.atribuicoes.some(
+        (atrib) => atrib.enfermeiroId === enfermeiroId
+      );
+
+      if (!temAtribuicao) {
+        return NextResponse.json(
+          { error: "Não tem permissão para desistir deste turno pois não lhe está atribuído." },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Executar a remoção das atribuições, candidaturas e alteração de estado numa transação atómica
     const turnoAtualizado = await prisma.$transaction(async (tx) => {
-      // Se for o enfermeiro, remove apenas a sua atribuição e candidatura. Se for admin, pode remover todas.
-      if (enfermeiroId) {
+      if (!isAdmin && enfermeiroId) {
         await tx.atribuicao.deleteMany({
           where: { turnoId, enfermeiroId },
         });
@@ -54,6 +75,7 @@ export async function POST(
           where: { turnoId, enfermeiroId },
         });
       } else {
+        // Se for admin, remove todas as atribuições e candidaturas do turno
         await tx.atribuicao.deleteMany({
           where: { turnoId },
         });

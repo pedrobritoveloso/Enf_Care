@@ -222,6 +222,7 @@ export async function GET(req: Request) {
     });
 
     // --- Mapeamento para mascarar valorHora consoante as permissões ---
+    // --- Mapeamento para mascarar valorHora e injetar propriedades de controlo do utilizador ---
     const turnosComPrivacidade = turnos.map((turno) => {
       const enfermeiroAtribuidoId = turno.atribuicoes[0]?.enfermeiroId;
 
@@ -230,12 +231,13 @@ export async function GET(req: Request) {
         enfermeiroIdAtual && enfermeiroAtribuidoId === enfermeiroIdAtual
       );
 
-      // Só pode ver o valor se for Admin, se o turno estiver Publicado, ou se for o enfermeiro atribuído a este turno
       const podeVerValor = eAdmin || eTurnoPublicado || eOProprioEnfermeiro;
 
       return {
         ...turno,
         valorHora: podeVerValor ? turno.valorHora : null,
+        atribuidoAMim: eOProprioEnfermeiro,
+        temMinhaCandidaturaPendente: Boolean(turno.candidaturas && turno.candidaturas.length > 0),
       };
     });
 
