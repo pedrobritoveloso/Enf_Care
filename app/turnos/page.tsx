@@ -10,11 +10,12 @@ import {
   ChevronRight, 
   Clock, 
   MapPin, 
-  CheckCircle2, 
   User,
   X,
   Send,
-  UserX
+  UserX,
+  RefreshCw,
+  UserCheck
 } from "lucide-react";
 
 interface Turno {
@@ -42,6 +43,12 @@ interface Turno {
   temMinhaCandidaturaPendente?: boolean;
 }
 
+interface Enfermeiro {
+  id: string;
+  nome: string;
+  email: string;
+}
+
 export default function TurnosPage() {
   const [viewMode, setViewMode] = useState<"calendario" | "lista">("calendario");
   const [turnos, setTurnos] = useState<Turno[]>([]);
@@ -52,7 +59,15 @@ export default function TurnosPage() {
   const [turnoDetalhe, setTurnoDetalhe] = useState<Turno | null>(null);
   const [submetendo, setSubmetendo] = useState(false);
 
-  // Filtros
+  // Estados para o Modal de Substituição / Troca de Turno
+  const [modalTrocaAberto, setModalTrocaAberto] = useState(false);
+  const [enfermeiros, setEnfermeiros] = useState<Enfermeiro[]>([]);
+  const [meuEmail, setMeuEmail] = useState<string | null>(null);
+  const [searchTermTroca, setSearchTermTroca] = useState("");
+  const [enfermeiroSelecionado, setEnfermeiroSelecionado] = useState<string>("");
+  const [loadingEnfermeiros, setLoadingEnfermeiros] = useState(false);
+
+  // Filtros da página
   const [searchTerm, setSearchTerm] = useState("");
   const [estadoFilter, setEstadoFilter] = useState("TODOS");
 
@@ -107,9 +122,9 @@ export default function TurnosPage() {
     }
   };
 
-  // Função para remover candidatura pendente ou desistir de turno atribuído
-  const handleRemoverOuDesistir = async (turnoId: string) => {
-    if (!confirm("Tem a certeza de que pretende retirar a sua candidatura/desistir deste turno?")) {
+  // Função para remover candidatura pendente (mantém-se para candidaturas)
+  const handleRemoverCandidatura = async (turnoId: string) => {
+    if (!confirm("Tem a certeza de que pretende retirar a sua candidatura deste turno?")) {
       return;
     }
 
@@ -121,7 +136,7 @@ export default function TurnosPage() {
       const data = await res.json();
 
       if (res.ok) {
-        alert(data.message || "Ação efetuada com sucesso.");
+        alert(data.message || "Candidatura removida com sucesso.");
         setTurnoDetalhe(null);
         fetchTurnos();
       } else {
@@ -134,6 +149,76 @@ export default function TurnosPage() {
       setSubmetendo(false);
     }
   };
+
+  // Abrir modal de substituição/troca direta
+  const abrirModalTroca = async () => {
+    setModalTrocaAberto(true);
+    try {
+      setLoadingEnfermeiros(true);
+      const resEnf = await fetch("/api/admin/enfermeiros");
+      if (resEnf.ok) {
+        const dataEnf = await resEnf.json();
+        if (Array.isArray(dataEnf)) setEnfermeiros(dataEnf);
+      }
+
+      const resSession = await fetch("/api/auth/session");
+      if (resSession.ok) {
+        const sessionData = await resSession.json();
+        if (sessionData?.user?.email) {
+          setMeuEmail(sessionData.user.email);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao carregar enfermeiros para troca:", err);
+    } finally {
+      setLoadingEnfermeiros(false);
+    }
+  };
+
+  // Executar a troca de turno com o colega selecionado
+  const executarTrocaTurno = async () => {
+    if (!turnoDetalhe || !enfermeiroSelecionado) {
+      alert("Por favor selecione o colega para realizar a substituição.");
+      return;
+    }
+
+    setSubmetendo(true);
+    try {
+      const res = await fetch(`/api/turnos/${turnoDetalhe.id}/trocar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ novoEnfermeiroId: enfermeiroSelecionado }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        alert(data.message || "Substituição de turno efetuada com sucesso!");
+        setModalTrocaAberto(false);
+        setTurnoDetalhe(null);
+        setEnfermeiroSelecionado("");
+        setSearchTermTroca("");
+        fetchTurnos();
+      } else {
+        alert(data.error || "Erro ao efetuar a substituição.");
+      }
+    } catch (err) {
+      console.error("Erro ao efetuar substituição:", err);
+      alert("Erro de comunicação com o servidor.");
+    } finally {
+      setSubmetendo(false);
+    }
+  };
+
+  const enfermeirosFiltrados = enfermeiros.filter((enf) => {
+    if (meuEmail && enf.email?.toLowerCase() === meuEmail.toLowerCase()) {
+      return false;
+    }
+    const termo = searchTermTroca.toLowerCase();
+    const nome = enf.nome?.toLowerCase() || "";
+    const email = enf.email?.toLowerCase() || "";
+    return nome.includes(termo) || email.includes(termo);
+  });
 
   const turnosFiltrados = useMemo(() => {
     if (!Array.isArray(turnos)) return [];
@@ -392,8 +477,8 @@ export default function TurnosPage() {
         </div>
       )}
 
-      {/* MODAL DE DETALHES E CANDIDATURA / DESISTÊNCIA DO ENFERMEIRO */}
-      {turnoDetalhe && (
+      {/* MODAL DE DETALHES E CANDIDATURA / SUBSTITUIÇÃO */}
+      {turnoDetalhe && !modalTrocaAberto && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-4 animate-in fade-in">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -437,7 +522,7 @@ export default function TurnosPage() {
             <div className="pt-4 border-t border-slate-100 space-y-2">
               {turnoDetalhe.temMinhaCandidaturaPendente ? (
                 <button
-                  onClick={() => handleRemoverOuDesistir(turnoDetalhe.id)}
+                  onClick={() => handleRemoverCandidatura(turnoDetalhe.id)}
                   disabled={submetendo}
                   className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 border border-rose-200"
                 >
@@ -453,14 +538,14 @@ export default function TurnosPage() {
                   <Send className="w-4 h-4" />
                   {submetendo ? "A submeter candidatura..." : "Candidatar-me a este Turno"}
                 </button>
-              ) : turnoDetalhe.atribuidoAMim ? (
+              ) : turnoDetalhe.atribuidoAMim && turnoDetalhe.estado !== "CONCLUIDO" ? (
                 <button
-                  onClick={() => handleRemoverOuDesistir(turnoDetalhe.id)}
+                  onClick={abrirModalTroca}
                   disabled={submetendo}
-                  className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 border border-rose-200"
+                  className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 border border-emerald-200 transition-all cursor-pointer"
                 >
-                  <UserX className="w-4 h-4" />
-                  {submetendo ? "A processar..." : "Desistir do Turno"}
+                  <RefreshCw className="w-4 h-4" />
+                  Substituir Turno (Trocar com Colega)
                 </button>
               ) : (
                 <div className="text-center p-3 bg-slate-50 rounded-2xl text-xs text-slate-500 font-medium">
@@ -469,6 +554,93 @@ export default function TurnosPage() {
                     : "Este turno já se encontra em curso ou concluído."}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE SELEÇÃO DE ENFERMEIRO PARA SUBSTITUIÇÃO */}
+      {modalTrocaAberto && turnoDetalhe && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl space-y-4 animate-in fade-in">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Substituir Turno</h3>
+                <p className="text-[11px] text-slate-500">
+                  {turnoDetalhe.instituicao.nome} - {new Date(turnoDetalhe.data).toLocaleDateString("pt-PT")}
+                </p>
+              </div>
+              <button
+                onClick={() => setModalTrocaAberto(false)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                Selecione o colega para realizar a substituição:
+              </label>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
+                <input
+                  type="text"
+                  placeholder="Pesquisar por nome ou email..."
+                  value={searchTermTroca}
+                  onChange={(e) => setSearchTermTroca(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-100 p-2 rounded-2xl">
+                {loadingEnfermeiros ? (
+                  <p className="text-xs text-slate-400 text-center py-4">A carregar enfermeiros...</p>
+                ) : enfermeirosFiltrados.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-4">Nenhum enfermeiro encontrado.</p>
+                ) : (
+                  enfermeirosFiltrados.map((enf) => (
+                    <div
+                      key={enf.id}
+                      onClick={() => setEnfermeiroSelecionado(enf.id)}
+                      className={`p-3 rounded-xl border text-xs flex justify-between items-center cursor-pointer transition-all ${
+                        enfermeiroSelecionado === enf.id
+                          ? "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold"
+                          : "bg-white border-slate-100 hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <div>
+                        <p className="font-semibold">{enf.nome || "Sem Nome"}</p>
+                        <p className="text-[10px] text-slate-400">{enf.email}</p>
+                      </div>
+                      {enfermeiroSelecionado === enf.id && (
+                        <UserCheck className="w-4 h-4 text-emerald-600" />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setModalTrocaAberto(false)}
+                className="flex-1 py-3 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-2xl transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={executarTrocaTurno}
+                disabled={submetendo || !enfermeiroSelecionado}
+                className="flex-1 py-3 text-xs font-bold text-white bg-emerald-800 hover:bg-emerald-900 rounded-2xl transition-all shadow-md disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {submetendo ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Confirmar Substituição"
+                )}
+              </button>
             </div>
           </div>
         </div>

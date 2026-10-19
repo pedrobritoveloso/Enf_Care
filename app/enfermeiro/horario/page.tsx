@@ -26,10 +26,6 @@ interface Turno {
     nome: string;
     morada?: string;
   };
-  assiduidades?: Array<{
-    entradaReal?: string;
-    saidReal?: string;
-  }>;
 }
 
 interface Enfermeiro {
@@ -48,6 +44,7 @@ export default function MeuHorarioPage() {
   // Estados para o Modal de Troca / Substituição
   const [modalTrocaAberto, setModalTrocaAberto] = useState(false);
   const [enfermeiros, setEnfermeiros] = useState<Enfermeiro[]>([]);
+  const [meuEmail, setMeuEmail] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [enfermeiroSelecionado, setEnfermeiroSelecionado] = useState<string>("");
   const [loadingEnfermeiros, setLoadingEnfermeiros] = useState(false);
@@ -74,25 +71,38 @@ export default function MeuHorarioPage() {
 
   useAutoRefresh(fetchMeuHorario, 15000);
 
-  // Carregar lista de enfermeiros para a troca
-  const carregarEnfermeirosParaTroca = async () => {
+  const abrirModalTroca = async () => {
+    setModalTrocaAberto(true);
     try {
       setLoadingEnfermeiros(true);
-      const res = await fetch("/api/admin/enfermeiros");
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) setEnfermeiros(data);
+      
+      // Carregar em paralelo a lista de enfermeiros e os turnos/perfil para identificar o utilizador logado
+      const [resEnf, resHorario] = await Promise.all([
+        fetch("/api/admin/enfermeiros"),
+        fetch("/api/enfermeiro/horario")
+      ]);
+
+      if (resEnf.ok) {
+        const dataEnf = await resEnf.json();
+        if (Array.isArray(dataEnf)) {
+          setEnfermeiros(dataEnf);
+        }
+      }
+
+      // Obter o email do utilizador logado através de uma chamada rápida ou sessão se disponível
+      // Como alternativa segura, podemos inferir pelo endpoint ou adicionar uma verificação de email
+      const resSession = await fetch("/api/auth/session");
+      if (resSession.ok) {
+        const sessionData = await resSession.json();
+        if (sessionData?.user?.email) {
+          setMeuEmail(sessionData.user.email);
+        }
       }
     } catch (err) {
-      console.error("Erro ao carregar enfermeiros:", err);
+      console.error("Erro ao preparar dados para troca:", err);
     } finally {
       setLoadingEnfermeiros(false);
     }
-  };
-
-  const abrirModalTroca = () => {
-    carregarEnfermeirosParaTroca();
-    setModalTrocaAberto(true);
   };
 
   const executarTrocaTurno = async () => {
@@ -129,10 +139,17 @@ export default function MeuHorarioPage() {
     }
   };
 
+  // Filtrar para garantir que o próprio utilizador logado NÃO aparece na lista de troca
   const enfermeirosFiltrados = enfermeiros.filter((enf) => {
+    // Excluir se o email do enfermeiro corresponder ao email do utilizador logado
+    if (meuEmail && enf.email?.toLowerCase() === meuEmail.toLowerCase()) {
+      return false;
+    }
+
     const termo = searchTerm.toLowerCase();
     const nome = enf.nome?.toLowerCase() || "";
     const email = enf.email?.toLowerCase() || "";
+    
     return nome.includes(termo) || email.includes(termo);
   });
 

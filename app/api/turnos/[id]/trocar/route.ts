@@ -15,52 +15,51 @@ export async function POST(
 
     const params = await context.params;
     const turnoId = params.id;
-
     const body = await req.json();
-    const { novoEnfermeiroId } = body; // ID do Enfermeiro Y (destino)
+    const { novoEnfermeiroId } = body; // Pode ser o ID do enfermeiro ou o utilizadorId
 
     if (!turnoId || !novoEnfermeiroId) {
-      return NextResponse.json(
-        { error: "Identificadores de turno ou enfermeiro em falta." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Parâmetros em falta." }, { status: 400 });
     }
 
-    // Obter o utilizador atual (Enfermeiro X - Origem)
+    // Obter o utilizador de origem (quem está logado)
     const utilizadorOrigem = await prisma.utilizador.findUnique({
       where: { email: session.user.email },
       include: { enfermeiro: true },
     });
 
     if (!utilizadorOrigem || !utilizadorOrigem.enfermeiro) {
-      return NextResponse.json(
-        { error: "Perfil de enfermeiro de origem não encontrado." },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Perfil de enfermeiro de origem não encontrado." }, { status: 403 });
     }
 
     const enfermeiroOrigemId = utilizadorOrigem.enfermeiro.id;
 
-    // Verificar se o Enfermeiro Y (destino) existe
-    const enfermeiroDestino = await prisma.enfermeiro.findUnique({
+    // --- ENCONTRAR O ENFERMEIRO DE DESTINO DE FORMA ROBUSTA ---
+    let enfermeiroDestino = await prisma.enfermeiro.findUnique({
       where: { id: novoEnfermeiroId },
       include: { utilizador: true },
     });
 
     if (!enfermeiroDestino) {
-      return NextResponse.json(
-        { error: "Enfermeiro selecionado para a troca não foi encontrado." },
-        { status: 404 }
-      );
+      // Tentar procurar por utilizadorId caso o ID enviado venha da tabela Utilizador
+      enfermeiroDestino = await prisma.enfermeiro.findUnique({
+        where: { utilizadorId: novoEnfermeiroId },
+        include: { utilizador: true },
+      });
     }
 
-    // Buscar o turno e validar se pertence ao Enfermeiro X
+    if (!enfermeiroDestino) {
+      return NextResponse.json({ error: "Enfermeiro de destino não encontrado." }, { status: 404 });
+    }
+
+    if (enfermeiroOrigemId === enfermeiroDestino.id) {
+      return NextResponse.json({ error: "Não pode trocar um turno consigo mesmo." }, { status: 400 });
+    }
+
+    // Verificar se o turno pertence ao enfermeiro de origem
     const turno = await prisma.turno.findUnique({
       where: { id: turnoId },
-      include: {
-        atribuicoes: true,
-        instituicao: true,
-      },
+      include: { atribuicoes: true, instituicao: true },
     });
 
     if (!turno) {
@@ -72,28 +71,20 @@ export async function POST(
     );
 
     if (!estaAtribuidoAoOrigem) {
-      return NextResponse.json(
-        { error: "Não tem permissão para trocar este turno, pois não lhe está atribuído." },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Não tem permissão para trocar este turno." }, { status: 403 });
     }
 
     const nomeInstituicao = turno.instituicao.nome;
     const dataFormatada = new Date(turno.data).toLocaleDateString("pt-PT");
 
-    // Executar a troca e as notificações numa transação atómica
+    // Executar a transação de troca
     await prisma.$transaction(async (tx) => {
-      // 1. Remover a atribuição antiga (Enfermeiro X)
+      // 1. Remover atribuição antiga
       await tx.atribuicao.deleteMany({
         where: { turnoId, enfermeiroId: enfermeiroOrigemId },
       });
 
-      // 2. Remover candidaturas pendentes do enfermeiro antigo se existirem
-      await tx.candidatura.deleteMany({
-        where: { turnoId, enfermeiroId: enfermeiroOrigemId },
-      });
-
-      // 3. Criar a nova atribuição (Enfermeiro Y)
+      // 2. Criar nova atribuição para o colega
       await tx.atribuicao.create({
         data: {
           turnoId,
@@ -101,13 +92,12 @@ export async function POST(
         },
       });
 
-      // 4. Manter estado como ATRIBUIDO
       await tx.turno.update({
         where: { id: turnoId },
         data: { estado: "ATRIBUIDO" },
       });
 
-      // 5. Notificar o Enfermeiro Y (Destino)
+      // 3. Notificar o Enfermeiro Y (Destino)
       await tx.notificacao.create({
         data: {
           utilizadorId: enfermeiroDestino.utilizadorId,
@@ -116,7 +106,7 @@ export async function POST(
         },
       });
 
-      // 6. Notificar todos os Administradores
+      // 4. Notificar os Admins
       const admins = await tx.utilizador.findMany({
         where: { tipo: "ADMIN" },
         select: { id: true },
@@ -133,14 +123,9 @@ export async function POST(
       }
     });
 
-    return NextResponse.json({
-      message: "Troca de turno efetuada com sucesso!",
-    });
+    return NextResponse.json({ message: "Troca de turno efetuada com sucesso!" });
   } catch (error: any) {
-    console.error("Erro ao efetuar troca de turno:", error);
-    return NextResponse.json(
-      { error: "Erro interno ao processar a troca de turno." },
-      { status: 500 }
-    );
+    console.error("Erro ao efetuar troca:", error);
+    return NextResponse.json({ error: "Erro interno ao processar a troca." }, { status: 500 });
   }
 }
