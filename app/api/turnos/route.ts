@@ -318,15 +318,39 @@ export async function POST(req: Request) {
           select: { utilizadorId: true },
         });
 
+        if (enfermeiroId) {
+        // Tenta encontrar o enfermeiro pelo ID e obter o seu utilizadorId.
+        // Se não encontrar, assume que o enfermeiroId enviado já é diretamente o utilizadorId ou o id do enfermeiro.
+        let utilizadorIdAlvo = null;
+
+        const enfermeiroReg = await tx.enfermeiro.findUnique({
+          where: { id: enfermeiroId },
+          select: { utilizadorId: true },
+        });
+
         if (enfermeiroReg) {
+          utilizadorIdAlvo = enfermeiroReg.utilizadorId;
+        } else {
+          // Validação alternativa caso venha diretamente o utilizadorId ou outra referência
+          const utilizadorReg = await tx.utilizador.findUnique({
+            where: { id: enfermeiroId },
+            select: { id: true },
+          });
+          if (utilizadorReg) {
+            utilizadorIdAlvo = utilizadorReg.id;
+          }
+        }
+
+        if (utilizadorIdAlvo) {
           await tx.notificacao.create({
             data: {
-              utilizadorId: enfermeiroReg.utilizadorId,
+              utilizadorId: utilizadorIdAlvo,
               titulo: "Novo Turno Atribuído",
               mensagem: `Um turno na instituição ${nomeInst} no dia ${dataFormatada} às ${horaInicio} foi-lhe atribuído.`,
             },
           });
         }
+      }
       } else {
         const enfermeiros = await tx.enfermeiro.findMany({
           select: { utilizadorId: true },
