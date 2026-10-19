@@ -202,7 +202,6 @@ export async function GET(req: Request) {
             },
           },
         },
-        // ADICIONAR ESTE BLOCO PARA O ENFERMEIRO VER A SUA CANDIDATURA:
         candidaturas: {
           where: enfermeiroIdAtual ? { enfermeiroId: enfermeiroIdAtual, estado: "PENDENTE" } : undefined,
           select: {
@@ -221,7 +220,6 @@ export async function GET(req: Request) {
       orderBy: { nome: "asc" },
     });
 
-    // --- Mapeamento para mascarar valorHora consoante as permissões ---
     // --- Mapeamento para mascarar valorHora e injetar propriedades de controlo do utilizador ---
     const turnosComPrivacidade = turnos.map((turno) => {
       const enfermeiroAtribuidoId = turno.atribuicoes[0]?.enfermeiroId;
@@ -306,6 +304,45 @@ export async function POST(req: Request) {
           },
         });
       }
+
+      // --- DISPARAR NOTIFICAÇÕES AUTOMÁTICAS ---
+      const instituicao = await tx.instituicao.findUnique({
+        where: { id: instituicaoId },
+      });
+      const nomeInst = instituicao?.nome || "Instituição";
+      const dataFormatada = new Date(data).toLocaleDateString("pt-PT");
+
+      if (enfermeiroId) {
+        const enfermeiroReg = await tx.enfermeiro.findUnique({
+          where: { id: enfermeiroId },
+          select: { utilizadorId: true },
+        });
+
+        if (enfermeiroReg) {
+          await tx.notificacao.create({
+            data: {
+              utilizadorId: enfermeiroReg.utilizadorId,
+              titulo: "Novo Turno Atribuído",
+              mensagem: `Um turno na instituição ${nomeInst} no dia ${dataFormatada} às ${horaInicio} foi-lhe atribuído.`,
+            },
+          });
+        }
+      } else {
+        const enfermeiros = await tx.enfermeiro.findMany({
+          select: { utilizadorId: true },
+        });
+
+        if (enfermeiros.length > 0) {
+          await tx.notificacao.createMany({
+            data: enfermeiros.map((enf) => ({
+              utilizadorId: enf.utilizadorId,
+              titulo: "Novo Turno Disponível",
+              mensagem: `Um turno na instituição ${nomeInst} foi aberto para o dia ${dataFormatada} às ${horaInicio}.`,
+            })),
+          });
+        }
+      }
+      // ------------------------------------------
 
       return turno;
     });

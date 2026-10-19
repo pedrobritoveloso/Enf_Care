@@ -34,7 +34,10 @@ export async function POST(
 
     const turno = await prisma.turno.findUnique({
       where: { id: turnoId },
-      include: { atribuicoes: true },
+      include: { 
+        atribuicoes: true,
+        instituicao: true,
+      },
     });
 
     if (!turno) {
@@ -65,7 +68,11 @@ export async function POST(
       }
     }
 
-    // Executar a remoção das atribuições, candidaturas e alteração de estado numa transação atómica
+    const utilizadorNome = utilizador.nome;
+    const nomeInstituicao = turno.instituicao.nome;
+    const dataFormatada = new Date(turno.data).toLocaleDateString("pt-PT");
+
+    // Executar a remoção das atribuições, candidaturas, alteração de estado e notificação numa transação atómica
     const turnoAtualizado = await prisma.$transaction(async (tx) => {
       if (!isAdmin && enfermeiroId) {
         await tx.atribuicao.deleteMany({
@@ -83,6 +90,23 @@ export async function POST(
           where: { turnoId },
         });
       }
+
+      // --- NOTIFICAR ADMINISTRADORES SOBRE A DESISTÊNCIA ---
+      const admins = await tx.utilizador.findMany({
+        where: { tipo: "ADMIN" },
+        select: { id: true },
+      });
+
+      if (admins.length > 0) {
+        await tx.notificacao.createMany({
+          data: admins.map((admin) => ({
+            utilizadorId: admin.id,
+            titulo: "Desistência de Turno",
+            mensagem: `O enfermeiro ${utilizadorNome} desistiu do turno da instituição ${nomeInstituicao} do dia ${dataFormatada}.`,
+          })),
+        });
+      }
+      // ----------------------------------------------------
 
       // Atualiza o estado do turno para PUBLICADO (ficando novamente na bolsa)
       return await tx.turno.update({
