@@ -86,13 +86,24 @@ export default function Navbar() {
     const userRole = (session?.user as any)?.tipo || session?.user?.role;
     const isAdmin = userRole === "ADMIN";
 
-    // Direcionar com base no tipo de utilizador e contexto da notificação
+    const tituloLower = notificacao.titulo.toLowerCase();
+    const mensagemLower = notificacao.mensagem.toLowerCase();
+
     if (isAdmin) {
-      // Se for admin e envolver candidaturas ou turnos, vai para a escala/turnos
-      router.push("/admin/turnos");
+      // Se for admin e envolver candidatura ou turnos, vai para a página de disponibilidades/candidaturas
+      if (tituloLower.includes("candidatura") || mensagemLower.includes("candidatou")) {
+        router.push("/admin/disponibilidades");
+      } else {
+        router.push("/admin/turnos");
+      }
     } else {
-      // Se for enfermeiro, vai para o seu horário / turnos disponíveis
-      if (notificacao.titulo.toLowerCase().includes("aprovada") || notificacao.titulo.toLowerCase().includes("horário")) {
+      // Se for enfermeiro e a candidatura foi aprovada / aceite, vai para o seu horário
+      if (
+        tituloLower.includes("aprovada") || 
+        tituloLower.includes("aceite") || 
+        mensagemLower.includes("aprovada") || 
+        mensagemLower.includes("horário")
+      ) {
         router.push("/enfermeiro/horario");
       } else {
         router.push("/turnos");
