@@ -4,10 +4,15 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(
-  req: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+
     const params = await context.params;
     const turnoId = params.id;
 
@@ -15,94 +20,105 @@ export async function POST(
       return NextResponse.json({ error: "ID do turno não fornecido" }, { status: 400 });
     }
 
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-    }
-
-    // 1. Obter utilizador e o respetivo perfil de enfermeiro
     const utilizador = await prisma.utilizador.findUnique({
       where: { email: session.user.email },
       include: { enfermeiro: true },
     });
 
-    if (!utilizador) {
-      return NextResponse.json({ error: "Utilizador não encontrado" }, { status: 404 });
+    if (!utilizador || !utilizador.enfermeiro) {
+      return NextResponse.json(
+        { error: "Perfil de enfermeiro não encontrado" },
+        { status: 404 }
+      );
     }
 
-    let enfermeiro = utilizador.enfermeiro;
+    const enfermeiroId = utilizador.enfermeiro.id;
 
-    // 2. Se o perfil de enfermeiro ainda não existir, cria um
-    if (!enfermeiro) {
-      enfermeiro = await prisma.enfermeiro.create({
-        data: {
-          utilizadorId: utilizador.id,
-          cedulaProfissional: `TEMP-${Date.now()}`,
+    const turno = await prisma.turno.findUnique({
+      where: { id: turnoId },
+      include: { instituicao: true },
+    });
+
+    if (!turno) {
+      return NextResponse.json({ error: "Turno não encontrado" }, { status: 404 });
+    }
+
+    if (turno.estado !== "PUBLICADO" && turno.estado !== "AGUARDAR_ENFERMEIRO") {
+      return NextResponse.json(
+        { error: "Este turno já não está disponível para candidaturas" },
+        { status: 400 }
+      );
+    }
+
+    // Verificar se já existe candidatura
+    const candidaturaExistente = await prisma.candidatura.findUnique({
+      where: {
+        turnoId_enfermeiroId: {
+          turnoId,
+          enfermeiroId,
         },
-      });
+      },
+    });
+
+    if (candidaturaExistente) {
+      return NextResponse.json(
+        { error: "Já se candidatou a este turno" },
+        { status: 400 }
+      );
     }
 
-    // 3. Executa a transação para submeter ou reativar a candidatura
+    // Criar a candidatura e atualizar estado do turno
     const resultado = await prisma.$transaction(async (tx) => {
-      const turno = await tx.turno.findUnique({
-        where: { id: turnoId },
-      });
-
-      if (!turno || (turno.estado !== "PUBLICADO" && turno.estado !== "AGUARDAR_ENFERMEIRO")) {
-        throw new Error("Este turno já não se encontra disponível para candidaturas.");
-      }
-
-      // Verificar se já existe candidatura anterior
-      const candidaturaExistente = await tx.candidatura.findUnique({
-        where: {
-          turnoId_enfermeiroId: {
-            turnoId: turno.id,
-            enfermeiroId: enfermeiro.id,
-          },
+      const novaCandidatura = await tx.candidatura.create({
+        data: {
+          turnoId,
+          enfermeiroId,
+          estado: "PENDENTE",
         },
       });
 
-      let candidatura;
-
-      if (candidaturaExistente) {
-        if (candidaturaExistente.estado === "PENDENTE" || candidaturaExistente.estado === "ACEITE") {
-          throw new Error("Já submeteu uma candidatura ativa para este turno.");
-        }
-
-        // Se a candidatura anterior foi REJEITADA, atualiza para PENDENTE permitindo uma nova tentativa
-        candidatura = await tx.candidatura.update({
-          where: { id: candidaturaExistente.id },
-          data: { estado: "PENDENTE" },
-        });
-      } else {
-        // Criar a candidatura com estado PENDENTE se não existir registo prévio
-        candidatura = await tx.candidatura.create({
-          data: {
-            turnoId: turno.id,
-            enfermeiroId: enfermeiro.id,
-            estado: "PENDENTE",
-          },
-        });
-      }
-
-      // Atualizar o estado do turno para indicar que tem candidaturas a aguardar validação
       await tx.turno.update({
-        where: { id: turno.id },
+        where: { id: turnoId },
         data: { estado: "AGUARDAR_ENFERMEIRO" },
       });
 
-      return candidatura;
+      // 1. Notificar todos os administradores sobre a nova candidatura
+      const admins = await tx.utilizador.findMany({
+        where: { tipo: "ADMIN" },
+        select: { id: true },
+      });
+
+      if (admins.length > 0) {
+        await tx.notificacao.createMany({
+          data: admins.map((admin) => ({
+            utilizadorId: admin.id,
+            titulo: "Nova Candidatura Recebida",
+            mensagem: `O enfermeiro ${utilizador.nome} candidatou-se ao turno da instituição ${turno.instituicao.nome}.`,
+          })),
+        });
+      }
+
+      // 2. Notificação de confirmação para o próprio enfermeiro
+      await tx.notificacao.create({
+        data: {
+          utilizadorId: utilizador.id,
+          titulo: "Candidatura Submetida",
+          mensagem: `A sua candidatura para o turno em ${turno.instituicao.nome} foi registada com sucesso.`,
+        },
+      });
+
+      return novaCandidatura;
     });
 
     return NextResponse.json({
-      message: "Candidatura submetida com sucesso! Aguarde aprovação do administrador.",
-      resultado,
+      message: "Candidatura submetida com sucesso!",
+      candidatura: resultado,
     });
   } catch (error: any) {
+    console.error("Erro ao inscrever no turno:", error);
     return NextResponse.json(
-      { error: error.message || "Erro ao submeter candidatura." },
-      { status: 400 }
+      { error: "Erro interno ao submeter candidatura." },
+      { status: 500 }
     );
   }
 }

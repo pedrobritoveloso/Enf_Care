@@ -33,12 +33,17 @@ export async function PATCH(
     const resultado = await prisma.$transaction(async (tx) => {
       const candidatura = await tx.candidatura.findUnique({
         where: { id: candidaturaId },
-        include: { turno: true },
+        include: { 
+          turno: { include: { instituicao: true } },
+          enfermeiro: { include: { utilizador: true } }
+        },
       });
 
       if (!candidatura || candidatura.turnoId !== turnoId) {
         throw new Error("Candidatura não encontrada.");
       }
+
+      const nomeInstituicao = candidatura.turno.instituicao.nome;
 
       if (acao === "APROVAR") {
         // 1. Marcar esta candidatura como ACEITE
@@ -47,7 +52,17 @@ export async function PATCH(
           data: { estado: "ACEITE" },
         });
 
-        // 2. Rejeitar todas as outras candidaturas pendentes para este turno
+        // 2. Procurar outras candidaturas pendentes antes de as rejeitar (para as notificar)
+        const outrasCandidaturas = await tx.candidatura.findMany({
+          where: {
+            turnoId,
+            id: { not: candidaturaId },
+            estado: "PENDENTE",
+          },
+          include: { enfermeiro: { include: { utilizador: true } } },
+        });
+
+        // Rejeitar todas as outras candidaturas pendentes para este turno
         await tx.candidatura.updateMany({
           where: {
             turnoId,
@@ -71,11 +86,40 @@ export async function PATCH(
           data: { estado: "ATRIBUIDO" },
         });
 
+        // 5. Notificar o enfermeiro APROVADO
+        await tx.notificacao.create({
+          data: {
+            utilizadorId: candidatura.enfermeiro.utilizadorId,
+            titulo: "Candidatura Aprovada!",
+            mensagem: `A sua candidatura para o turno em ${nomeInstituicao} foi aprovada. O turno já se encontra no seu horário.`,
+          },
+        });
+
+        // 6. Notificar os enfermeiros cujas candidaturas foram automaticamento REJEITADAS
+        if (outrasCandidaturas.length > 0) {
+          await tx.notificacao.createMany({
+            data: outrasCandidaturas.map((c) => ({
+              utilizadorId: c.enfermeiro.utilizadorId,
+              titulo: "Candidatura Não Selecionada",
+              mensagem: `O turno em ${nomeInstituicao} foi atribuído a outro enfermeiro.`,
+            })),
+          });
+        }
+
         return { success: true, message: "Candidatura aprovada com sucesso." };
       } else if (acao === "REJEITAR") {
         await tx.candidatura.update({
           where: { id: candidaturaId },
           data: { estado: "REJEITADA" },
+        });
+
+        // Notificar o enfermeiro REJEITADO
+        await tx.notificacao.create({
+          data: {
+            utilizadorId: candidatura.enfermeiro.utilizadorId,
+            titulo: "Candidatura Não Aceite",
+            mensagem: `A sua candidatura para o turno em ${nomeInstituicao} não foi aceite.`,
+          },
         });
 
         // Verificar se ainda existem candidaturas pendentes
