@@ -23,6 +23,7 @@ interface DashboardStats {
   instituicoesCount: number;
   turnosAtribuidosCount: number;
   turnosPublicadosCount: number;
+  turnosEmCursoCount?: number;
   turnosAtribuidosLista: Turno[];
   turnosPublicadosLista: Turno[];
   metricasHoje?: {
@@ -72,11 +73,20 @@ export default function DashboardAdmin() {
     setShowModal(true);
   };
 
-  const getMensagemConclusao = (turno: Turno, temEnfermeiro: boolean) => {
-    if (!temEnfermeiro) return "Concluído (Sem enfermeiro atribuído).";
-    if (turno.motivoConclusao) return `Concluído (${turno.motivoConclusao}).`;
-    if (turno.assiduidades?.[0]?.saidaReal) return "Concluído (Check-out efetuado).";
-    return "Concluído por expiração de horário.";
+  const getMensagemEstado = (turno: Turno, temEnfermeiro: boolean) => {
+    const estadoEfetivo = (turno.estado === "CONCLUIDO" && !temEnfermeiro) ? "CANCELADO" : turno.estado;
+
+    if (estadoEfetivo === "CANCELADO") {
+      return { texto: "Turno Cancelado (Sem enfermeiro atribuído).", classe: "bg-rose-50 border-rose-200 text-rose-900" };
+    }
+    if (estadoEfetivo === "EM_CURSO") {
+      return { texto: "Em curso (Check-in efetuado).", classe: "bg-amber-50 border-amber-200 text-amber-900 animate-pulse" };
+    }
+    if (estadoEfetivo === "CONCLUIDO") {
+      const msg = turno.motivoConclusao ? `Concluído (${turno.motivoConclusao})` : "Concluído com sucesso.";
+      return { texto: msg, classe: "bg-blue-50 border-blue-200 text-blue-900" };
+    }
+    return { texto: "Atribuído", classe: "bg-emerald-50 border-emerald-200 text-emerald-900" };
   };
 
   const formatDate = (dateStr: string) => {
@@ -149,7 +159,7 @@ export default function DashboardAdmin() {
       <div className="bg-white p-5 rounded-3xl border border-amber-100 shadow-sm space-y-3">
         <div onClick={() => openModal("ATRIBUIDOS")} className="flex items-center justify-between cursor-pointer">
           <div>
-            <p className="text-xs text-slate-400 font-medium">Turnos Atribuídos</p>
+            <p className="text-xs text-slate-400 font-medium">Turnos Atribuídos / Ativos</p>
             <h2 className="text-2xl font-black text-slate-900 mt-0.5">{stats?.turnosAtribuidosCount ?? 0}</h2>
           </div>
           <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600">
@@ -198,6 +208,7 @@ export default function DashboardAdmin() {
                     const enfermeiroObj = turno.atribuicoes?.[0]?.enfermeiro?.utilizador?.nome;
                     const temEnfermeiro = !!enfermeiroObj;
                     const enfermeiroNome = enfermeiroObj || "Não atribuído";
+                    const infoEstado = getMensagemEstado(turno, temEnfermeiro);
 
                     return (
                       <div key={turno.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
@@ -213,17 +224,9 @@ export default function DashboardAdmin() {
                           <span className="text-slate-400">Enfermeiro: </span>
                           <strong className="text-slate-800">{enfermeiroNome}</strong>
 
-                          {turno.estado === "EM_CURSO" && (
-                            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 font-medium">
-                              Em curso (Check-in efetuado).
-                            </div>
-                          )}
-
-                          {turno.estado === "CONCLUIDO" && (
-                            <div className="mt-1 p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 font-medium">
-                              {getMensagemConclusao(turno, temEnfermeiro)}
-                            </div>
-                          )}
+                          <div className={`mt-1.5 p-2 rounded-xl text-[11px] font-medium border ${infoEstado.classe}`}>
+                            {infoEstado.texto}
+                          </div>
                         </div>
                       </div>
                     );

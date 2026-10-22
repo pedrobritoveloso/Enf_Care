@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { calcularValorTotalTurno } from "@/lib/calculoRemuneração";
 
 export async function GET(req: Request) {
   try {
@@ -101,82 +102,122 @@ export async function POST(req: Request) {
     });
 
     if (utilizador?.tipo !== "ADMIN") {
-      return NextResponse.json({ error: "Sem permissão." }, { status: 403 });
+      return NextResponse.json({ error: "Apenas administradores podem criar turnos." }, { status: 403 });
     }
 
     const body = await req.json();
-    const { instituicaoId, enfermeiroId, data, horaInicio, horaFim, valorHora, vagas } = body;
+    const {
+      instituicaoId,
+      data,
+      horaInicio,
+      horaFim,
+      vagas,
+      enfermeiroId,
+    } = body;
 
-    if (!instituicaoId || !enfermeiroId || !data || !horaInicio || !horaFim) {
-      return NextResponse.json({ error: "Campos obrigatórios em falta." }, { status: 400 });
+    if (!instituicaoId || !data || !horaInicio || !horaFim) {
+      return NextResponse.json({ error: "Preencha todos os campos obrigatórios." }, { status: 400 });
     }
 
+    // 1. Obter as tarifas configuradas
+    let configTarifas = await prisma.configuracaoTarifa.findFirst();
+    const tarifas = {
+      valorDiurno: configTarifas?.valorDiurno ?? 12.0,
+      valorNoturno: configTarifas?.valorNoturno ?? 15.0,
+      valorEspecial: configTarifas?.valorEspecial ?? 18.0,
+    };
+
+    // 2. Obter épocas especiais
+    const epocasEspeciais = await prisma.epocaEspecial.findMany();
+
+    // 3. Calcular a remuneração automática
+    const dataTurnoObj = new Date(data);
+    const resultado = calcularValorTotalTurno(
+      dataTurnoObj,
+      horaInicio,
+      horaFim,
+      tarifas,
+      epocasEspeciais.map((e) => ({
+        dataInício: e.dataInicio,
+        dataFim: e.dataFim,
+      }))
+    );
+
+    const totalHoras = resultado.detalhes.diurnas + resultado.detalhes.noturnas + resultado.detalhes.especiais;
+    const valorHoraMedio = totalHoras > 0 ? Number((resultado.valorTotal / totalHoras).toFixed(2)) : tarifas.valorDiurno;
+
+    const estadoInicial = enfermeiroId ? "ATRIBUIDO" : "PUBLICADO";
+
     const novoTurno = await prisma.$transaction(async (tx) => {
-      // 1. Resolver o ID real da tabela Enfermeiro
-      let enfermeiroExistente = await tx.enfermeiro.findUnique({
-        where: { id: enfermeiroId },
-      });
-
-      // Se o ID enviado não for da tabela Enfermeiro, procura por utilizadorId
-      if (!enfermeiroExistente) {
-        enfermeiroExistente = await tx.enfermeiro.findUnique({
-          where: { utilizadorId: enfermeiroId },
-        });
-
-        // Se o utilizador ainda não tiver registo na tabela Enfermeiro, cria-o
-        if (!enfermeiroExistente) {
-          enfermeiroExistente = await tx.enfermeiro.create({
-            data: {
-              utilizadorId: enfermeiroId,
-              cedulaProfissional: `TEMP-${Date.now()}`,
-            },
-          });
-        }
-      }
-
-      // 2. Criar o turno
       const turno = await tx.turno.create({
         data: {
           instituicaoId,
-          data: new Date(data),
+          data: dataTurnoObj,
           horaInicio,
           horaFim,
           vagas: vagas ? Number(vagas) : 1,
-          valorHora: valorHora ? parseFloat(valorHora) : null,
-          estado: "ATRIBUIDO",
+          valorHora: valorHoraMedio,
+          estado: estadoInicial,
         },
       });
 
-      // 3. Criar a atribuição garantindo a chave estrangeira correta
-      await tx.atribuicao.create({
-        data: {
-          turnoId: turno.id,
-          enfermeiroId: enfermeiroExistente.id,
-        },
-      });
+      if (enfermeiroId) {
+        await tx.atribuicao.create({
+          data: {
+            turnoId: turno.id,
+            enfermeiroId,
+          },
+        });
+      }
 
-      // --- 4. DISPARAR NOTIFICAÇÃO PARA O ENFERMEIRO ATRIBUÍDO ---
+      // Notificações automáticas
       const instituicao = await tx.instituicao.findUnique({
         where: { id: instituicaoId },
       });
       const nomeInst = instituicao?.nome || "Instituição";
-      const dataFormatada = new Date(data).toLocaleDateString("pt-PT");
+      const dataFormatada = dataTurnoObj.toLocaleDateString("pt-PT");
 
-      const enfermeiroReg = await tx.enfermeiro.findUnique({
-        where: { id: enfermeiroExistente.id },
-        select: { utilizadorId: true },
-      });
-
-      if (enfermeiroReg) {
-        await tx.notificacao.create({
-          data: {
-            utilizadorId: enfermeiroReg.utilizadorId,
-            titulo: "Novo Turno Atribuído",
-            mensagem: `Um turno na instituição ${nomeInst} no dia ${dataFormatada} às ${horaInicio} foi-lhe atribuído.`,
-          },
+      if (enfermeiroId) {
+        let utilizadorIdAlvo = null;
+        const enfermeiroReg = await tx.enfermeiro.findUnique({
+          where: { id: enfermeiroId },
+          select: { utilizadorId: true },
         });
+
+        if (enfermeiroReg) {
+          utilizadorIdAlvo = enfermeiroReg.utilizadorId;
+        } else {
+          const utilizadorReg = await tx.utilizador.findUnique({
+            where: { id: enfermeiroId },
+            select: { id: true },
+          });
+          if (utilizadorReg) utilizadorIdAlvo = utilizadorReg.id;
+        }
+
+        if (utilizadorIdAlvo) {
+          await tx.notificacao.create({
+            data: {
+              utilizadorId: utilizadorIdAlvo,
+              titulo: "Novo Turno Atribuído",
+              mensagem: `Um turno na instituição ${nomeInst} no dia ${dataFormatada} às ${horaInicio} foi-lhe atribuído.`,
+            },
+          });
+        }
+      } else {
+        const enfermeiros = await tx.enfermeiro.findMany({
+          select: { utilizadorId: true },
+        });
+
+        if (enfermeiros.length > 0) {
+          await tx.notificacao.createMany({
+            data: enfermeiros.map((enf) => ({
+              utilizadorId: enf.utilizadorId,
+              titulo: "Novo Turno Disponível",
+              mensagem: `Um turno na instituição ${nomeInst} foi aberto para o dia ${dataFormatada} às ${horaInicio}.`,
+            })),
+          });
+        }
       }
-      // ------------------------------------------------------------
 
       return turno;
     });
@@ -184,6 +225,6 @@ export async function POST(req: Request) {
     return NextResponse.json(novoTurno, { status: 201 });
   } catch (error: any) {
     console.error("Erro ao criar turno em escala:", error);
-    return NextResponse.json({ error: "Erro interno ao criar turno." }, { status: 500 });
+    return NextResponse.json({ error: "Erro ao criar turno." }, { status: 500 });
   }
 }

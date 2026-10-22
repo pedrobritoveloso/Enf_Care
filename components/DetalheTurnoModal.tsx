@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, Calendar, Clock, MapPin, User, AlertCircle, Play, Square, Trash2, UserMinus } from "lucide-react";
+import { X, Calendar, Clock, MapPin, User, AlertCircle, Play, Square, Trash2, UserMinus, Info } from "lucide-react";
 import { podeFazerCheckIn, getEstiloEstadoTurno } from "@/lib/turnosUtils";
 
 interface Turno {
@@ -10,10 +10,11 @@ interface Turno {
   horaInicio: string;
   horaFim: string;
   estado?: string;
+  motivoConclusao?: string | null;
   instituicao: { nome: string; morada?: string };
   atribuicoes?: Array<{
-    enfermeiro: {
-      utilizador: { nome: string; email: string };
+    enfermeiro?: {
+      utilizador?: { nome: string; email: string };
     };
   }>;
 }
@@ -21,8 +22,8 @@ interface Turno {
 interface DetalheTurnoModalProps {
   turno: Turno;
   onClose: () => void;
-  onPontoSuccess?: () => void; // Callback acionado após check-in/out, remoção de enfermeiro ou eliminação
-  isAdmin?: boolean; // Define se ativa as ações de administração
+  onPontoSuccess?: () => void;
+  isAdmin?: boolean;
 }
 
 export default function DetalheTurnoModal({
@@ -33,13 +34,14 @@ export default function DetalheTurnoModal({
 }: DetalheTurnoModalProps) {
   const [processando, setProcessando] = useState(false);
 
-  // Extrai o nome do enfermeiro se o turno estiver atribuído
-  const enfermeiroAtribuido = turno.atribuicoes?.[0]?.enfermeiro?.utilizador?.nome;
+  const enfermeiroNome = turno.atribuicoes?.[0]?.enfermeiro?.utilizador?.nome;
+  const semEnfermeiro = !turno.atribuicoes || turno.atribuicoes.length === 0 || !enfermeiroNome;
+  
+  // Determinar o estado efetivo (se concluído sem enfermeiro, é considerado CANCELADO)
+  const estadoEfetivo = (turno.estado === "CONCLUIDO" && semEnfermeiro) ? "CANCELADO" : (turno.estado || "PUBLICADO");
 
-  // Validação da janela de 10 minutos antes do início
   const checkInPermitido = podeFazerCheckIn(turno.data, turno.horaInicio, turno.horaFim);
 
-  // --- HANDLERS PARA O ENFERMEIRO ---
   const handleRegistarPonto = async (acao: "CHECK_IN" | "CHECK_OUT") => {
     setProcessando(true);
 
@@ -82,49 +84,41 @@ export default function DetalheTurnoModal({
     }
   };
 
-  // --- HANDLERS PARA O ADMIN ---
   const handleDesassociarEnfermeiro = async () => {
-  if (
-    !confirm(
-      "Tem a certeza que deseja remover o enfermeiro deste turno? O turno ficará novamente disponível."
-    )
-  ) {
-    return;
-  }
-
-  setProcessando(true);
-  try {
-    // Rota corrigida tirando o /admin/ do caminho:
-    const res = await fetch(`/api/turnos/${turno.id}/desassociar`, {
-      method: "POST",
-    });
-
-    if (res.ok) {
-      alert("Enfermeiro removido com sucesso!");
-      if (onPontoSuccess) onPontoSuccess();
-      onClose();
-    } else {
-      const data = await res.json();
-      alert(data.error || "Erro ao remover enfermeiro.");
-    }
-  } catch (err) {
-    console.error(err);
-    alert("Erro de comunicação com o servidor.");
-  } finally {
-    setProcessando(false);
-  }
-};
-
-  const handleEliminarTurno = async () => {
-    if (
-      !confirm("Tem a certeza que deseja ELIMINAR permanentemente este turno?")
-    ) {
+    if (!confirm("Tem a certeza que deseja remover o enfermeiro deste turno? O turno ficará novamente disponível.")) {
       return;
     }
 
     setProcessando(true);
     try {
-      const res = await fetch(`/api//turnos/${turno.id}`, {
+      const res = await fetch(`/api/turnos/${turno.id}/desassociar`, {
+        method: "POST",
+      });
+
+      if (res.ok) {
+        alert("Enfermeiro removido com sucesso!");
+        if (onPontoSuccess) onPontoSuccess();
+        onClose();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Erro ao remover enfermeiro.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Erro de comunicação com o servidor.");
+    } finally {
+      setProcessando(false);
+    }
+  };
+
+  const handleEliminarTurno = async () => {
+    if (!confirm("Tem a certeza que deseja ELIMINAR permanentemente este turno?")) {
+      return;
+    }
+
+    setProcessando(true);
+    try {
+      const res = await fetch(`/api/turnos/${turno.id}`, {
         method: "DELETE",
       });
 
@@ -170,8 +164,12 @@ export default function DetalheTurnoModal({
               <Calendar className="w-3.5 h-3.5 text-slate-500" />
               <span>{new Date(turno.data).toLocaleDateString("pt-PT")}</span>
             </div>
-            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${getEstiloEstadoTurno(turno.estado)}`}>
-              {turno.estado || "PUBLICADO"}
+            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+              estadoEfetivo === "CANCELADO" 
+                ? "bg-rose-100 text-rose-800 border-rose-200" 
+                : getEstiloEstadoTurno(estadoEfetivo)
+            }`}>
+              {estadoEfetivo}
             </span>
           </div>
 
@@ -181,33 +179,54 @@ export default function DetalheTurnoModal({
           </div>
         </div>
 
-        {/* Informação do Enfermeiro Atribuído */}
-        {enfermeiroAtribuido ? (
+        {/* Informação do Enfermeiro Atribuído ou Aviso de Disponível */}
+        {enfermeiroNome ? (
           <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 flex items-center gap-3">
             <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-800 font-bold">
               <User className="w-4 h-4" />
             </div>
             <div>
               <span className="text-[11px] text-slate-400 block font-medium">Enfermeiro Atribuído</span>
-              <span className="font-bold text-slate-900 text-xs">{enfermeiroAtribuido}</span>
+              <span className="font-bold text-slate-900 text-xs">{enfermeiroNome}</span>
             </div>
           </div>
-        ) : (
+        ) : (estadoEfetivo === "PUBLICADO" || estadoEfetivo === "AGUARDAR_ENFERMEIRO") ? (
           <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-100 text-xs text-amber-800 font-medium flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
             <span>Turno disponível (Ainda não foi atribuído a nenhum enfermeiro).</span>
+          </div>
+        ) : null}
+
+        {/* Mensagem / Motivo caso concluído ou cancelado */}
+        {(estadoEfetivo === "CONCLUIDO" || estadoEfetivo === "CANCELADO") && (
+          <div className={`p-3 rounded-2xl text-xs space-y-1 border ${
+            estadoEfetivo === "CANCELADO"
+              ? "bg-rose-50/80 border-rose-200 text-rose-900"
+              : "bg-blue-50/80 border-blue-200 text-blue-900"
+          }`}>
+            <div className="flex items-center gap-1.5 font-bold">
+              <Info className="w-4 h-4 shrink-0" />
+              <span>{estadoEfetivo === "CANCELADO" ? "Turno Cancelado" : "Turno Concluído"}</span>
+            </div>
+            <p className="text-[11px] leading-relaxed mt-1">
+              {turno.motivoConclusao || (
+                estadoEfetivo === "CANCELADO"
+                  ? "Turno cancelado por falta de atribuição de enfermeiro."
+                  : "Turno concluído com sucesso."
+              )}
+            </p>
           </div>
         )}
 
         {/* SECÇÃO DE AÇÕES */}
         {isAdmin ? (
-          /* AÇÕES EXCLUSIVAS DO ADMIN */
           <div className="space-y-2 pt-2 border-t border-slate-100">
-            {enfermeiroAtribuido && (
+            {/* O botão de remover enfermeiro só aparece se houver enfermeiro E o estado for estritamente ATRIBUIDO */}
+            {enfermeiroNome && estadoEfetivo === "ATRIBUIDO" && (
               <button
                 disabled={processando}
                 onClick={handleDesassociarEnfermeiro}
-                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
               >
                 <UserMinus className="w-4 h-4" />
                 {processando ? "A processar..." : "Remover Enfermeiro (Tornar Disponível)"}
@@ -217,27 +236,30 @@ export default function DetalheTurnoModal({
             <button
               disabled={processando}
               onClick={handleEliminarTurno}
-              className="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all"
+              className="w-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <Trash2 className="w-4 h-4" />
               {processando ? "A processar..." : "Eliminar Turno Permanentemente"}
             </button>
           </div>
         ) : (
-          /* AÇÕES DO ENFERMEIRO (PONTO/CHECK-IN/CHECK-OUT) */
-          turno.estado === "CONCLUIDO" ? (
+          estadoEfetivo === "CONCLUIDO" ? (
             <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 text-xs font-semibold rounded-2xl text-center">
               Este turno já foi concluído.
             </div>
+          ) : estadoEfetivo === "CANCELADO" ? (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold rounded-2xl text-center">
+              Este turno encontra-se cancelado.
+            </div>
           ) : (
             <div className="space-y-2 pt-1">
-              {turno.estado === "ATRIBUIDO" && !checkInPermitido && (
+              {estadoEfetivo === "ATRIBUIDO" && !checkInPermitido && (
                 <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-2xl font-medium text-center">
                   O check-in só fica disponível <strong>10 minutos antes</strong> do início do turno.
                 </div>
               )}
 
-              {turno.estado === "ATRIBUIDO" && (
+              {estadoEfetivo === "ATRIBUIDO" && (
                 <button
                   disabled={!checkInPermitido || processando}
                   onClick={() => handleRegistarPonto("CHECK_IN")}
@@ -252,11 +274,11 @@ export default function DetalheTurnoModal({
                 </button>
               )}
 
-              {turno.estado === "EM_CURSO" && (
+              {estadoEfetivo === "EM_CURSO" && (
                 <button
                   disabled={processando}
                   onClick={() => handleRegistarPonto("CHECK_OUT")}
-                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99]"
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99] cursor-pointer"
                 >
                   <Square className="w-4 h-4 fill-current" />
                   {processando ? "A registar..." : "Fazer Check-out (Concluir Turno)"}

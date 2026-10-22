@@ -67,7 +67,6 @@ export default function DashboardEnfermeiro() {
 
   useAutoRefresh(fetchStats, 15000);
 
-  // Redireciona para o scanner para validar o QR Code na instituição
   const irParaScanner = () => {
     setShowPontoModal(false);
     router.push("/enfermeiro/scanner");
@@ -101,11 +100,11 @@ export default function DashboardEnfermeiro() {
             <div className="flex justify-between items-start">
               <h3 className="font-bold text-slate-900 text-base">{proximoTurno.instituicao.nome}</h3>
               {proximoTurno.estado === "EM_CURSO" ? (
-                <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse">
+                <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse border border-amber-300">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Em Curso
                 </span>
               ) : (
-                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
                   <CheckCircle2 className="w-3 h-3" /> Confirmado
                 </span>
               )}

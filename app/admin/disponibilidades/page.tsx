@@ -37,6 +37,7 @@ interface Turno {
   horaFim: string;
   valorHora?: number;
   estado: string;
+  motivoConclusao?: string | null;
   instituicao: {
     nome: string;
     morada?: string;
@@ -94,7 +95,6 @@ export default function AdminDisponibilidadesPage() {
 
   useAutoRefresh(fetchTurnos, 15000);
 
-  // Gestão de Aprovação / Rejeição de Candidaturas
   const handleAprovarCandidatura = async (turnoId: string, candidaturaId: string, acao: "APROVAR" | "REJEITAR") => {
     try {
       const res = await fetch(`/api/admin/turnos/${turnoId}/candidaturas`, {
@@ -130,43 +130,42 @@ export default function AdminDisponibilidadesPage() {
 
       if (!matchesSearch) return false;
 
-      const temEnfermeiro = Boolean(enfermeiroNome);
-      const ePorAtribuir = !temEnfermeiro || t.estado === "PUBLICADO" || t.estado === "AGUARDAR_ENFERMEIRO";
+      const semEnfermeiro = !t.atribuicoes || t.atribuicoes.length === 0 || !t.atribuicoes[0]?.enfermeiro?.utilizador?.nome;
+      const estadoEfetivo = (t.estado === "CONCLUIDO" && semEnfermeiro) ? "CANCELADO" : t.estado;
+      const ePorAtribuir = semEnfermeiro || estadoEfetivo === "PUBLICADO" || estadoEfetivo === "AGUARDAR_ENFERMEIRO";
 
       if (estadoFilter === "DISPONIVEIS") {
         return ePorAtribuir;
       }
       if (estadoFilter === "ATRIBUIDOS") {
-        return temEnfermeiro && (t.estado === "ATRIBUIDO" || t.estado === "EM_CURSO");
+        return !semEnfermeiro && estadoEfetivo === "ATRIBUIDO";
+      }
+      if (estadoFilter === "EM_CURSO") {
+        return estadoEfetivo === "EM_CURSO";
       }
       if (estadoFilter === "CONCLUIDOS") {
-        return t.estado === "CONCLUIDO";
+        return estadoEfetivo === "CONCLUIDO";
+      }
+      if (estadoFilter === "CANCELADOS") {
+        return estadoEfetivo === "CANCELADO";
       }
 
       return true;
     });
   }, [turnos, searchTerm, estadoFilter]);
 
-  // Turnos que possuem candidaturas (especialmente úteis para a vista de Candidaturas)
   const turnosComCandidaturas = useMemo(() => {
     return turnos.filter((t) => t.estado === "AGUARDAR_ENFERMEIRO" && t.candidaturas && t.candidaturas.some(c => c.estado === "PENDENTE"));
   }, [turnos]);
 
-  // Cálculos do Calendário
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfWeek = new Date(year, month, 1).getDay();
 
-  const handlePrevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
-  };
-
+  const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+  const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
   const handleToday = () => {
     const hoje = new Date();
     setCurrentDate(hoje);
@@ -185,9 +184,18 @@ export default function AdminDisponibilidadesPage() {
     const turnosDoDia = getTurnosDoDiaFormatado(dataISO);
     if (turnosDoDia.length === 0) return null;
 
+    const temCancelado = turnosDoDia.some((t) => {
+      const semEnfermeiro = !t.atribuicoes || t.atribuicoes.length === 0 || !t.atribuicoes[0]?.enfermeiro?.utilizador?.nome;
+      return t.estado === "CANCELADO" || (t.estado === "CONCLUIDO" && semEnfermeiro);
+    });
+    if (temCancelado) return "bg-rose-500";
+
+    const temEmCurso = turnosDoDia.some((t) => t.estado === "EM_CURSO");
+    if (temEmCurso) return "bg-amber-500 animate-pulse";
+
     const temDisponivel = turnosDoDia.some((t) => {
-      const temEnfermeiro = Boolean(t.atribuicoes?.[0]?.enfermeiro?.utilizador?.nome);
-      return !temEnfermeiro || t.estado === "PUBLICADO" || t.estado === "AGUARDAR_ENFERMEIRO";
+      const semEnfermeiro = !t.atribuicoes || t.atribuicoes.length === 0 || !t.atribuicoes[0]?.enfermeiro?.utilizador?.nome;
+      return semEnfermeiro || t.estado === "PUBLICADO" || t.estado === "AGUARDAR_ENFERMEIRO";
     });
     if (temDisponivel) return "bg-amber-400";
 
@@ -204,7 +212,6 @@ export default function AdminDisponibilidadesPage() {
 
   return (
     <div className="max-w-md mx-auto p-4 space-y-5 text-slate-800 pb-20">
-      {/* Título e Botão Publicar */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Gestão de Turnos</h1>
@@ -219,14 +226,11 @@ export default function AdminDisponibilidadesPage() {
         </button>
       </div>
 
-      {/* Alternador de Vista (Calendário / Lista / Candidaturas) */}
       <div className="bg-slate-100 p-1 rounded-2xl flex text-xs font-semibold gap-1">
         <button
           onClick={() => setViewMode("calendario")}
           className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${
-            viewMode === "calendario"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-900"
+            viewMode === "calendario" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
           }`}
         >
           <CalendarIcon className="w-3.5 h-3.5" /> Calendário
@@ -234,9 +238,7 @@ export default function AdminDisponibilidadesPage() {
         <button
           onClick={() => setViewMode("lista")}
           className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${
-            viewMode === "lista"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-900"
+            viewMode === "lista" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900"
           }`}
         >
           <List className="w-3.5 h-3.5" /> Lista
@@ -244,9 +246,7 @@ export default function AdminDisponibilidadesPage() {
         <button
           onClick={() => setViewMode("candidaturas")}
           className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all relative ${
-            viewMode === "candidaturas"
-              ? "bg-white text-slate-900 shadow-sm font-bold"
-              : "text-slate-500 hover:text-slate-900"
+            viewMode === "candidaturas" ? "bg-white text-slate-900 shadow-sm font-bold" : "text-slate-500 hover:text-slate-900"
           }`}
         >
           <Users className="w-3.5 h-3.5" /> Candidaturas
@@ -256,7 +256,6 @@ export default function AdminDisponibilidadesPage() {
         </button>
       </div>
 
-      {/* Filtros (Visíveis apenas nas vistas Calendário e Lista) */}
       {viewMode !== "candidaturas" && (
         <div className="space-y-2">
           <div className="relative">
@@ -278,12 +277,13 @@ export default function AdminDisponibilidadesPage() {
             <option value="TODOS">Todos os estados</option>
             <option value="DISPONIVEIS">Disponíveis (Amarelo)</option>
             <option value="ATRIBUIDOS">Atribuídos (Verde)</option>
+            <option value="EM_CURSO">Em Curso (Âmbar)</option>
             <option value="CONCLUIDOS">Concluídos (Azul)</option>
+            <option value="CANCELADOS">Cancelados (Vermelho)</option>
           </select>
         </div>
       )}
 
-      {/* VISTA: CANDIDATURAS */}
       {viewMode === "candidaturas" && (
         <div className="space-y-4">
           <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl text-xs text-amber-900">
@@ -347,7 +347,6 @@ export default function AdminDisponibilidadesPage() {
         </div>
       )}
 
-      {/* VISTA: CALENDÁRIO */}
       {viewMode === "calendario" && (
         <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-4">
           <div className="flex justify-between items-center">
@@ -356,22 +355,13 @@ export default function AdminDisponibilidadesPage() {
               <span className="capitalize">{monthNames[month]} de {year}</span>
             </div>
             <div className="flex items-center gap-1">
-              <button 
-                onClick={handleToday}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors"
-              >
+              <button onClick={handleToday} className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors">
                 Hoje
               </button>
-              <button 
-                onClick={handlePrevMonth}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors"
-              >
+              <button onClick={handlePrevMonth} className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button 
-                onClick={handleNextMonth}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors"
-              >
+              <button onClick={handleNextMonth} className="p-1 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -379,9 +369,7 @@ export default function AdminDisponibilidadesPage() {
 
           <div className="grid grid-cols-7 text-center gap-y-2 text-xs">
             {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => (
-              <span key={d} className="text-slate-400 font-medium pb-1">
-                {d}
-              </span>
+              <span key={d} className="text-slate-400 font-medium pb-1">{d}</span>
             ))}
 
             {Array.from({ length: firstDayOfWeek }).map((_, i) => (
@@ -407,10 +395,7 @@ export default function AdminDisponibilidadesPage() {
                   <span className={`text-xs ${isSelected ? "text-slate-900 font-bold" : "text-slate-700"}`}>
                     {dia}
                   </span>
-                  
-                  {corBadgeClass && (
-                    <span className={`w-2 h-2 rounded-full mt-0.5 ${corBadgeClass}`} />
-                  )}
+                  {corBadgeClass && <span className={`w-2 h-2 rounded-full mt-0.5 ${corBadgeClass}`} />}
                 </button>
               );
             })}
@@ -418,12 +403,8 @@ export default function AdminDisponibilidadesPage() {
         </div>
       )}
 
-      {/* VISTA: LISTA OU DETALHES DO DIA SELECIONADO */}
       {viewMode !== "candidaturas" && (
-        (viewMode === "lista" 
-          ? turnosFiltrados 
-          : (diaSelecionado ? getTurnosDoDiaFormatado(diaSelecionado) : [])
-        ).length === 0 ? (
+        (viewMode === "lista" ? turnosFiltrados : (diaSelecionado ? getTurnosDoDiaFormatado(diaSelecionado) : [])).length === 0 ? (
           <p className="text-xs text-slate-400 italic text-center py-4">Nenhum turno encontrado.</p>
         ) : (
           <div className="space-y-3">
@@ -433,21 +414,27 @@ export default function AdminDisponibilidadesPage() {
               </h2>
             )}
 
-            {(viewMode === "lista" 
-              ? turnosFiltrados 
-              : getTurnosDoDiaFormatado(diaSelecionado!)
-            ).map((turno) => {
+            {(viewMode === "lista" ? turnosFiltrados : getTurnosDoDiaFormatado(diaSelecionado!)).map((turno) => {
               const enfermeiroNome = turno.atribuicoes?.[0]?.enfermeiro?.utilizador?.nome;
-              const isDisponivel = !enfermeiroNome || turno.estado === "PUBLICADO" || turno.estado === "AGUARDAR_ENFERMEIRO";
-              const isConcluido = turno.estado === "CONCLUIDO";
+              const semEnfermeiro = !enfermeiroNome;
+              const estadoEfetivo = (turno.estado === "CONCLUIDO" && semEnfermeiro) ? "CANCELADO" : turno.estado;
+
+              const isDisponivel = semEnfermeiro || estadoEfetivo === "PUBLICADO" || estadoEfetivo === "AGUARDAR_ENFERMEIRO";
+              const isEmCurso = estadoEfetivo === "EM_CURSO";
+              const isConcluido = estadoEfetivo === "CONCLUIDO";
+              const isCancelado = estadoEfetivo === "CANCELADO";
 
               return (
                 <div
                   key={turno.id}
                   onClick={() => setTurnoDetalhe(turno)}
                   className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                    isConcluido
+                    isCancelado
+                      ? "bg-rose-50/60 border-rose-200 hover:border-rose-400"
+                      : isConcluido
                       ? "bg-blue-50/60 border-blue-200 hover:border-blue-400"
+                      : isEmCurso
+                      ? "bg-amber-50 border-amber-300 hover:border-amber-400 ring-1 ring-amber-300"
                       : isDisponivel
                       ? "bg-amber-50/50 border-amber-200 hover:border-amber-400"
                       : "bg-emerald-50/50 border-emerald-200 hover:border-emerald-400"
@@ -461,9 +448,17 @@ export default function AdminDisponibilidadesPage() {
                       )}
                     </div>
 
-                    {isConcluido ? (
+                    {isCancelado ? (
+                      <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-200">
+                        Cancelado
+                      </span>
+                    ) : isConcluido ? (
                       <span className="bg-[#EBF3FC] text-[#1E40AF] text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
                         Concluído
+                      </span>
+                    ) : isEmCurso ? (
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-amber-300 animate-pulse flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Em Curso
                       </span>
                     ) : isDisponivel ? (
                       <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
@@ -478,9 +473,7 @@ export default function AdminDisponibilidadesPage() {
 
                   <div className="mt-2 text-xs text-slate-600 flex items-center gap-1 font-medium">
                     <User className="w-3.5 h-3.5 text-slate-400" />
-                    <span>
-                      Enfermeiro: <strong>{enfermeiroNome || "Por atribuir"}</strong>
-                    </span>
+                    <span>Enfermeiro: <strong>{enfermeiroNome || "Por atribuir"}</strong></span>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between text-xs text-slate-600 font-semibold">
@@ -499,7 +492,6 @@ export default function AdminDisponibilidadesPage() {
         )
       )}
 
-      {/* OVERLAY MODAL: CRIAR TURNO */}
       {isCriarModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-xl border border-slate-100 relative max-h-[90vh] overflow-y-auto">
@@ -520,7 +512,6 @@ export default function AdminDisponibilidadesPage() {
         </div>
       )}
 
-      {/* MODAL DETALHES REUTILIZÁVEL */}
       {turnoDetalhe && (
         <DetalheTurnoModal
           turno={turnoDetalhe}

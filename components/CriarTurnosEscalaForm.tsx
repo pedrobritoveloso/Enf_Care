@@ -13,6 +13,12 @@ interface Enfermeiro {
   email: string;
 }
 
+// Lista de horas em formato 24h rigoroso (de hora em hora ou de meia em meia hora se preferires)
+const HORAS_24H = Array.from({ length: 24 }, (_, i) => {
+  const h = i.toString().padStart(2, "0");
+  return [`${h}:00`, `${h}:30`];
+}).flat();
+
 export default function CriarTurnoEscalaForm() {
   const [instituicoes, setInstituicoes] = useState<Instituicao[]>([]);
   const [enfermeiros, setEnfermeiros] = useState<Enfermeiro[]>([]);
@@ -26,7 +32,6 @@ export default function CriarTurnoEscalaForm() {
     data: "",
     horaInicio: "08:00",
     horaFim: "20:00",
-    valorHora: "",
     vagas: "1",
   });
 
@@ -36,7 +41,7 @@ export default function CriarTurnoEscalaForm() {
         setLoadingDados(true);
         const [resInst, resEnf] = await Promise.all([
           fetch("/api/instituicoes"),
-          fetch("/api/admin/enfermeiros"), // 👈 Rota alinhada com o EnfermeirosList
+          fetch("/api/admin/enfermeiros"),
         ]);
 
         if (resInst.ok) {
@@ -47,8 +52,6 @@ export default function CriarTurnoEscalaForm() {
         if (resEnf.ok) {
           const dataEnf = await resEnf.json();
           if (Array.isArray(dataEnf)) setEnfermeiros(dataEnf);
-        } else {
-          console.error("Erro na API /api/admin/enfermeiros:", resEnf.status);
         }
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
@@ -60,7 +63,6 @@ export default function CriarTurnoEscalaForm() {
     carregarDados();
   }, []);
 
-  // Filtra pelo nome ou email com base na estrutura devolvida por /api/admin/enfermeiros
   const enfermeirosFiltrados = enfermeiros.filter((enf) => {
     const termo = searchTerm.toLowerCase();
     const nome = enf.nome?.toLowerCase() || "";
@@ -85,14 +87,13 @@ export default function CriarTurnoEscalaForm() {
       });
 
       if (res.ok) {
-        alert("Turno em escala atribuído com sucesso!");
+        alert("Turno em escala atribuído com sucesso! Remuneração calculada automaticamente.");
         setFormData({
           instituicaoId: "",
           enfermeiroId: "",
           data: "",
           horaInicio: "08:00",
           horaFim: "20:00",
-          valorHora: "",
           vagas: "1",
         });
         setSearchTerm("");
@@ -128,8 +129,6 @@ export default function CriarTurnoEscalaForm() {
       {/* Enfermeiro Atribuído */}
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-1">Enfermeiro Atribuído</label>
-        
-        {/* Input para filtrar */}
         <input
           type="text"
           placeholder="Pesquisar por nome ou email..."
@@ -137,8 +136,6 @@ export default function CriarTurnoEscalaForm() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm mb-2"
         />
-
-        {/* Dropdown com a lista da rota /api/admin/enfermeiros */}
         <select
           required
           value={formData.enfermeiroId}
@@ -172,53 +169,46 @@ export default function CriarTurnoEscalaForm() {
         />
       </div>
 
-      {/* Horas */}
+      {/* Horas (Formato 24h) */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">Hora Início</label>
-          <input
-            type="time"
+          <select
             required
             value={formData.horaInicio}
             onChange={(e) => setFormData({ ...formData, horaInicio: e.target.value })}
             className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
-          />
+          >
+            {HORAS_24H.map((h) => (
+              <option key={`escala-ini-${h}`} value={h}>{h}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">Hora Fim</label>
-          <input
-            type="time"
+          <select
             required
             value={formData.horaFim}
             onChange={(e) => setFormData({ ...formData, horaFim: e.target.value })}
             className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
-          />
+          >
+            {HORAS_24H.map((h) => (
+              <option key={`escala-fim-${h}`} value={h}>{h}</option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Valores e Vagas */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Valor/Hora (€)</label>
-          <input
-            type="number"
-            step="0.5"
-            placeholder="Ex: 12.5"
-            value={formData.valorHora}
-            onChange={(e) => setFormData({ ...formData, valorHora: e.target.value })}
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-slate-700 mb-1">Vagas</label>
-          <input
-            type="number"
-            min="1"
-            value={formData.vagas}
-            onChange={(e) => setFormData({ ...formData, vagas: e.target.value })}
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
-          />
-        </div>
+      {/* Vagas */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700 mb-1">Vagas</label>
+        <input
+          type="number"
+          min="1"
+          value={formData.vagas}
+          onChange={(e) => setFormData({ ...formData, vagas: e.target.value })}
+          className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm"
+        />
       </div>
 
       <button

@@ -168,3 +168,19 @@ model Notificacao {
 
   utilizador   Utilizador @relation(fields: [utilizadorId], references: [id], onDelete: Cascade)
 }
+
+model ConfiguracaoTarifa {
+  id                    String   @id @default(uuid())
+  valorDiurno           Float    @default(12.0) // Segunda a Sexta (08h - 20h)
+  valorNoturno          Float    @default(15.0) // Segunda a Sexta (20h - 08h)
+  valorEspecial         Float    @default(18.0) // Fim de semana / Feriado / Época Especial
+  atualizadoEm          DateTime @updatedAt
+}
+
+model EpocaEspecial {
+  id          String   @id @default(uuid())
+  nome        String   
+  dataInicio  DateTime
+  dataFim     DateTime
+  criadoEm    DateTime @default(now())
+}

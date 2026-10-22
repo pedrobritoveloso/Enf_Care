@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Clock, MapPin, Play, Square, CheckCircle2, Navigation, AlertTriangle, X, Info, QrCode } from "lucide-react";
+import { Clock, MapPin, CheckCircle2, Navigation, AlertTriangle, X, Info, QrCode } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Turno {
@@ -9,7 +9,7 @@ interface Turno {
   data: string;
   horaInicio: string;
   horaFim: string;
-  estado: "ATRIBUIDO" | "EM_CURSO" | "CONCLUIDO" | string;
+  estado: "ATRIBUIDO" | "EM_CURSO" | "CONCLUIDO" | "CANCELADO" | string;
   motivoConclusao?: string | null;
   instituicao: { nome: string; morada: string };
   assiduidades?: Array<{
@@ -24,7 +24,6 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
 
   const assiduidade = turno.assiduidades?.[0];
 
-  // Verifica se o horário do turno já ultrapassou o horaFim
   const checarSeTurnoExpirou = () => {
     try {
       const [horas, minutos] = turno.horaFim.split(":").map(Number);
@@ -37,8 +36,9 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
   };
 
   const turnoExpirado = checarSeTurnoExpirou();
+  const isConcluido = turno.estado === "CONCLUIDO" || turnoExpirado;
+  const isCancelado = turno.estado === "CANCELADO";
 
-  // Redireciona para o leitor de QR Code para validar o ponto fisicamente na instituição
   const irParaScanner = () => {
     setModalAberto(false);
     router.push("/enfermeiro/scanner");
@@ -46,7 +46,6 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
 
   return (
     <>
-      {/* Cartão Clicável do Próximo Turno */}
       <div
         onClick={() => setModalAberto(true)}
         className="bg-white border border-slate-200 hover:border-emerald-500 rounded-3xl p-5 shadow-sm cursor-pointer transition-all active:scale-[0.99] space-y-3"
@@ -64,9 +63,14 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
               <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Em Curso
             </span>
           )}
-          {(turno.estado === "CONCLUIDO" || turnoExpirado) && (
+          {isConcluido && !isCancelado && (
             <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" /> Concluído
+            </span>
+          )}
+          {isCancelado && (
+            <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+              Cancelado
             </span>
           )}
         </div>
@@ -82,11 +86,12 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
           <span className="flex items-center gap-1 text-emerald-800">
             <Clock className="w-3.5 h-3.5" /> {turno.horaInicio} - {turno.horaFim}
           </span>
-          <span className="text-xs text-emerald-700 font-bold">Ler QR Code para Ponto →</span>
+          {!isConcluido && !isCancelado && (
+            <span className="text-xs text-emerald-700 font-bold">Ler QR Code para Ponto →</span>
+          )}
         </div>
       </div>
 
-      {/* POP-UP / MODAL DE PONTO DO ENFERMEIRO */}
       {modalAberto && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 space-y-5 animate-in fade-in slide-in-from-bottom-5">
@@ -111,7 +116,7 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
               </div>
             </div>
 
-            {/* AÇÕES DE CHECK-IN / CHECK-OUT */}
+            {/* AÇÕES DE CHECK-IN / CHECK-OUT OU AVISO DE ESTADO ENCERRADO */}
             <div className="space-y-3">
               {turno.estado === "ATRIBUIDO" && !turnoExpirado && (
                 <div className="space-y-2">
@@ -145,7 +150,7 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
                 </div>
               )}
 
-              {(turno.estado === "CONCLUIDO" || turnoExpirado) && (
+              {isConcluido && !isCancelado && (
                 <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl text-center space-y-2">
                   <div className="flex items-center justify-center gap-1.5 text-emerald-800 font-bold text-xs">
                     <CheckCircle2 className="w-4 h-4" /> Turno Concluído
@@ -168,6 +173,17 @@ export function ProximoTurnoCard({ turno, onUpdate }: { turno: Turno; onUpdate?:
                       <AlertTriangle className="w-3.5 h-3.5" /> Concluído por expiração de horário
                     </p>
                   ) : null}
+                </div>
+              )}
+
+              {isCancelado && (
+                <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl text-center space-y-2">
+                  <div className="flex items-center justify-center gap-1.5 text-rose-800 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" /> Turno Cancelado
+                  </div>
+                  <p className="text-[11px] text-slate-700 font-medium leading-relaxed">
+                    {turno.motivoConclusao || "Este turno foi cancelado por não haver atribuição de enfermeiro."}
+                  </p>
                 </div>
               )}
             </div>

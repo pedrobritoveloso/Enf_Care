@@ -12,6 +12,11 @@ interface CriarTurnoDisponivelFormProps {
   onSuccess?: () => void;
 }
 
+const HORAS_24H = Array.from({ length: 24 }, (_, i) => {
+  const h = i.toString().padStart(2, "0");
+  return [`${h}:00`, `${h}:30`];
+}).flat();
+
 export default function CriarTurnoDisponivelForm({ 
   onClose, 
   onSuccess 
@@ -25,7 +30,6 @@ export default function CriarTurnoDisponivelForm({
     data: "",
     horaInicio: "08:00",
     horaFim: "20:00",
-    valorHora: "",
     vagas: "1",
   });
 
@@ -40,7 +44,7 @@ export default function CriarTurnoDisponivelForm({
         }
       } catch (err) {
         console.error("Erro ao carregar instituições:", err);
-      }finally {
+      } finally {
         setLoadingDados(false);
       }
     }
@@ -60,13 +64,12 @@ export default function CriarTurnoDisponivelForm({
       });
 
       if (res.ok) {
-        alert("Turno publicado com sucesso!");
+        alert("Turno publicado com sucesso! O valor foi calculado automaticamente.");
         setFormData({
           instituicaoId: "",
           data: "",
           horaInicio: "08:00",
           horaFim: "20:00",
-          valorHora: "",
           vagas: "1",
         });
         if (onSuccess) {
@@ -90,7 +93,7 @@ export default function CriarTurnoDisponivelForm({
           Publicar Turno Disponível
         </h2>
         <p className="text-xs text-slate-400 font-medium mt-0.5">
-          Crie um turno aberto na bolsa para candidatura de qualquer enfermeiro
+          Crie um turno aberto na bolsa para candidatura de qualquer enfermeiro (remuneração calculada automaticamente)
         </p>
       </div>
 
@@ -131,61 +134,52 @@ export default function CriarTurnoDisponivelForm({
           />
         </div>
 
-        {/* Hora Início e Hora Fim */}
+        {/* Hora Início e Hora Fim (Formato 24h) */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Hora Início
             </label>
-            <input
-              type="time"
+            <select
               required
               value={formData.horaInicio}
               onChange={(e) => setFormData({ ...formData, horaInicio: e.target.value })}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5D]"
-            />
+            >
+              {HORAS_24H.map((h) => (
+                <option key={`disp-ini-${h}`} value={h}>{h}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Hora Fim
             </label>
-            <input
-              type="time"
+            <select
               required
               value={formData.horaFim}
               onChange={(e) => setFormData({ ...formData, horaFim: e.target.value })}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5D]"
-            />
+            >
+              {HORAS_24H.map((h) => (
+                <option key={`disp-fim-${h}`} value={h}>{h}</option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* Valor/Hora e Vagas */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Valor/Hora (€)
-            </label>
-            <input
-              type="number"
-              step="0.5"
-              placeholder="Ex: 12.5"
-              value={formData.valorHora}
-              onChange={(e) => setFormData({ ...formData, valorHora: e.target.value })}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5D]"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Vagas
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={formData.vagas}
-              onChange={(e) => setFormData({ ...formData, vagas: e.target.value })}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5D]"
-            />
-          </div>
+        {/* Vagas */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">
+            Vagas
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={formData.vagas}
+            onChange={(e) => setFormData({ ...formData, vagas: e.target.value })}
+            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-[#006B5D]"
+          />
         </div>
 
         <div className="flex items-center gap-2 pt-2">

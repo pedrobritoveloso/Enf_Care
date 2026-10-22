@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
+import { calcularValorTotalTurno } from "@/lib/calculoRemuneração";
 
 export async function GET(req: Request) {
   try {
@@ -11,7 +12,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    // Procura o utilizador atual para obter o tipo e o ID de enfermeiro (se aplicável)
     const utilizadorAtual = await prisma.utilizador.findUnique({
       where: { email: session.user.email },
       include: { enfermeiro: true },
@@ -21,10 +21,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Utilizador não encontrado" }, { status: 404 });
     }
 
-    // --- AUTO-CONCLUSÃO DE TURNOS EXPIRADOS ---
+    // --- AUTO-CONCLUSÃO / CANCELAMENTO DE TURNOS EXPIRADOS ---
     const agora = new Date();
 
-    // Procura turnos ativos que ainda não estejam concluídos/cancelados
     const turnosParaVerificar = await prisma.turno.findMany({
       where: {
         estado: { in: ["PUBLICADO", "AGUARDAR_ENFERMEIRO", "ATRIBUIDO", "EM_CURSO"] },
@@ -69,30 +68,29 @@ export async function GET(req: Request) {
       const enfermeiroNome = turno.atribuicoes[0]?.enfermeiro?.utilizador?.nome || "Enfermeiro";
       const enfermeiroId = turno.atribuicoes[0]?.enfermeiroId;
 
-      // 1. REGRA: Sem enfermeiro até 5 min antes do início do turno
+      // 1. REGRA: Sem enfermeiro até 5 min antes do início do turno -> CANCELADO
       const limite5MinAntes = new Date(dataInicioTurno.getTime() - 5 * 60 * 1000);
 
       if ((turno.estado === "PUBLICADO" || turno.estado === "AGUARDAR_ENFERMEIRO") && agora >= limite5MinAntes) {
         await prisma.turno.update({
           where: { id: turno.id },
           data: {
-            estado: "CONCLUIDO",
-            motivoConclusao: "Turno concluído por não haver enfermeiro",
+            estado: "CANCELADO",
+            motivoConclusao: "Turno cancelado por falta de atribuição de enfermeiro.",
           },
         });
         continue;
       }
 
-      // 2. REGRA: Turnos com enfermeiro que ultrapassaram a hora de fim
+      // 2. REGRA: Turnos com enfermeiro que ultrapassaram a hora de fim -> CONCLUIDO
       if (agora > dataFimTurno) {
         if (turno.estado === "ATRIBUIDO") {
-          // Enfermeiro não fez check-in
           await prisma.$transaction(async (tx) => {
             await tx.turno.update({
               where: { id: turno.id },
               data: {
                 estado: "CONCLUIDO",
-                motivoConclusao: `Turno concluído por expiração de tempo (${enfermeiroNome} nao fez check-in)`,
+                motivoConclusao: `Turno concluído por expiração de tempo (${enfermeiroNome} não efetuou check-in).`,
               },
             });
 
@@ -108,7 +106,6 @@ export async function GET(req: Request) {
             }
           });
         } else if (turno.estado === "EM_CURSO") {
-          // Enfermeiro fez check-in mas não fez check-out
           const assiduidadePendente = turno.assiduidades.find((a) => a.saidaReal === null);
 
           await prisma.$transaction(async (tx) => {
@@ -132,14 +129,13 @@ export async function GET(req: Request) {
               where: { id: turno.id },
               data: {
                 estado: "CONCLUIDO",
-                motivoConclusao: `Turno concluído por expiração de tempo (${enfermeiroNome} nao fez check-out)`,
+                motivoConclusao: `Turno concluído por expiração de tempo (${enfermeiroNome} não efetuou check-out).`,
               },
             });
           });
         }
       }
     }
-    // ------------------------------------------
 
     const eAdmin = utilizadorAtual.tipo === "ADMIN";
     const enfermeiroIdAtual = utilizadorAtual.enfermeiro?.id;
@@ -148,22 +144,18 @@ export async function GET(req: Request) {
     const search = searchParams.get("search") || "";
     const estado = searchParams.get("estado") || "";
     const instituicaoId = searchParams.get("instituicaoId") || "";
-    const mesAno = searchParams.get("mesAno") || ""; // formato "YYYY-MM"
+    const mesAno = searchParams.get("mesAno") || "";
 
-    // Filtros dinâmicos para a query do Prisma
     const whereCondition: any = {};
 
-    // Filtro por instituição específica
     if (instituicaoId && instituicaoId !== "TODAS") {
       whereCondition.instituicaoId = instituicaoId;
     }
 
-    // Filtro por Estado (ex: PUBLICADO, ATRIBUIDO)
     if (estado && estado !== "TODOS") {
       whereCondition.estado = estado;
     }
 
-    // Filtro por Pesquisa Global (Nome da Instituição ou Nome do Enfermeiro)
     if (search.trim() !== "") {
       whereCondition.OR = [
         { instituicao: { nome: { contains: search, mode: "insensitive" } } },
@@ -179,7 +171,6 @@ export async function GET(req: Request) {
       ];
     }
 
-    // Filtro por Mês/Ano
     if (mesAno) {
       const [year, month] = mesAno.split("-").map(Number);
       const startDate = new Date(year, month - 1, 1);
@@ -220,10 +211,8 @@ export async function GET(req: Request) {
       orderBy: { nome: "asc" },
     });
 
-    // --- Mapeamento para mascarar valorHora e injetar propriedades de controlo do utilizador ---
     const turnosComPrivacidade = turnos.map((turno) => {
       const enfermeiroAtribuidoId = turno.atribuicoes[0]?.enfermeiroId;
-
       const eTurnoPublicado = turno.estado === "PUBLICADO";
       const eOProprioEnfermeiro = Boolean(
         enfermeiroIdAtual && enfermeiroAtribuidoId === enfermeiroIdAtual
@@ -253,127 +242,59 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const utilizador = await prisma.utilizador.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (utilizador?.tipo !== "ADMIN") {
-      return NextResponse.json({ error: "Apenas administradores podem criar turnos." }, { status: 403 });
-    }
-
     const body = await req.json();
-    const {
-      instituicaoId,
-      data,
-      horaInicio,
-      horaFim,
-      vagas,
-      valorHora,
-      enfermeiroId, // Opcional: Se enviado (na Escala), cria o turno já ATRIBUIDO
-    } = body;
+    const { instituicaoId, data, horaInicio, horaFim, vagas } = body;
 
     if (!instituicaoId || !data || !horaInicio || !horaFim) {
-      return NextResponse.json({ error: "Preencha todos os campos obrigatórios." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Por favor preencha todos os campos obrigatórios." },
+        { status: 400 }
+      );
     }
 
-    const estadoInicial = enfermeiroId ? "ATRIBUIDO" : "PUBLICADO";
+    let configTarifas = await prisma.configuracaoTarifa.findFirst();
+    const tarifas = {
+      valorDiurno: configTarifas?.valorDiurno ?? 12.0,
+      valorNoturno: configTarifas?.valorNoturno ?? 15.0,
+      valorEspecial: configTarifas?.valorEspecial ?? 18.0,
+    };
 
-    const novoTurno = await prisma.$transaction(async (tx) => {
-      const turno = await tx.turno.create({
-        data: {
-          instituicaoId,
-          data: new Date(data),
-          horaInicio,
-          horaFim,
-          vagas: vagas ? Number(vagas) : 1,
-          valorHora: valorHora ? parseFloat(valorHora) : null,
-          estado: estadoInicial,
-        },
-      });
+    const epocasEspeciais = await prisma.epocaEspecial.findMany();
 
-      if (enfermeiroId) {
-        await tx.atribuicao.create({
-          data: {
-            turnoId: turno.id,
-            enfermeiroId,
-          },
-        });
-      }
+    const dataTurnoObj = new Date(data);
+    const resultado = calcularValorTotalTurno(
+      dataTurnoObj,
+      horaInicio,
+      horaFim,
+      tarifas,
+      epocasEspeciais.map((e) => ({
+        dataInício: e.dataInicio,
+        dataFim: e.dataFim,
+      }))
+    );
 
-      // --- DISPARAR NOTIFICAÇÕES AUTOMÁTICAS ---
-      const instituicao = await tx.instituicao.findUnique({
-        where: { id: instituicaoId },
-      });
-      const nomeInst = instituicao?.nome || "Instituição";
-      const dataFormatada = new Date(data).toLocaleDateString("pt-PT");
+    const totalHoras = resultado.detalhes.diurnas + resultado.detalhes.noturnas + resultado.detalhes.especiais;
+    const valorHoraMedio = totalHoras > 0 ? Number((resultado.valorTotal / totalHoras).toFixed(2)) : tarifas.valorDiurno;
 
-      if (enfermeiroId) {
-        const enfermeiroReg = await tx.enfermeiro.findUnique({
-          where: { id: enfermeiroId },
-          select: { utilizadorId: true },
-        });
-
-        if (enfermeiroId) {
-        // Tenta encontrar o enfermeiro pelo ID e obter o seu utilizadorId.
-        // Se não encontrar, assume que o enfermeiroId enviado já é diretamente o utilizadorId ou o id do enfermeiro.
-        let utilizadorIdAlvo = null;
-
-        const enfermeiroReg = await tx.enfermeiro.findUnique({
-          where: { id: enfermeiroId },
-          select: { utilizadorId: true },
-        });
-
-        if (enfermeiroReg) {
-          utilizadorIdAlvo = enfermeiroReg.utilizadorId;
-        } else {
-          // Validação alternativa caso venha diretamente o utilizadorId ou outra referência
-          const utilizadorReg = await tx.utilizador.findUnique({
-            where: { id: enfermeiroId },
-            select: { id: true },
-          });
-          if (utilizadorReg) {
-            utilizadorIdAlvo = utilizadorReg.id;
-          }
-        }
-
-        if (utilizadorIdAlvo) {
-          await tx.notificacao.create({
-            data: {
-              utilizadorId: utilizadorIdAlvo,
-              titulo: "Novo Turno Atribuído",
-              mensagem: `Um turno na instituição ${nomeInst} no dia ${dataFormatada} às ${horaInicio} foi-lhe atribuído.`,
-            },
-          });
-        }
-      }
-      } else {
-        const enfermeiros = await tx.enfermeiro.findMany({
-          select: { utilizadorId: true },
-        });
-
-        if (enfermeiros.length > 0) {
-          await tx.notificacao.createMany({
-            data: enfermeiros.map((enf) => ({
-              utilizadorId: enf.utilizadorId,
-              titulo: "Novo Turno Disponível",
-              mensagem: `Um turno na instituição ${nomeInst} foi aberto para o dia ${dataFormatada} às ${horaInicio}.`,
-            })),
-          });
-        }
-      }
-      // ------------------------------------------
-
-      return turno;
+    const novoTurno = await prisma.turno.create({
+      data: {
+        instituicaoId,
+        data: dataTurnoObj,
+        horaInicio,
+        horaFim,
+        vagas: vagas ? Number(vagas) : 1,
+        valorHora: valorHoraMedio,
+        estado: "PUBLICADO",
+      },
     });
 
     return NextResponse.json(novoTurno, { status: 201 });
   } catch (error: any) {
-    console.error("Erro ao criar turno:", error);
-    return NextResponse.json({ error: "Erro ao criar turno." }, { status: 500 });
+    console.error("Erro ao criar turno disponível:", error);
+    return NextResponse.json({ error: "Erro interno ao criar turno." }, { status: 500 });
   }
 }
